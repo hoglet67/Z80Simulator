@@ -1,8 +1,6 @@
 // Z80_Simulator.cpp : Defines the entry point for the console application.
 //
 
-#include "stdafx.h"
-
 // ChipBrowser.cpp : Defines the entry point for the console application.
 // 8085 CPU Simulator
 // Version: 1.0
@@ -10,26 +8,42 @@
 // Date: 1.1.2013
 
 // Adapted to Z80 CPU Simulator on 26.9.2013
+// Ported to Linux/g++ by Dave Banks 29.8.2018
 
-#include <tchar.h>
-
-#include <Windows.h>
+#include <inttypes.h>
 #include <locale.h>
-#include <GdiPlus.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <vector>
 
-using namespace Gdiplus;
+#include <png++/png.hpp>
+
+#include <sys/time.h>
+
 using namespace std;
 
-#pragma comment (lib, "gdiplus.lib")
-#pragma comment (lib, "Winmm.lib")
-
+// DMB: Not a problem on Linux!
 // it says that fopen is unsafe
-#pragma warning(disable : 4996)
-// we need really big stack for recursive flood fill (need to be reimplemented)
-#pragma comment(linker, "/STACK:536870912")
+//#pragma warning(disable : 4996)
 
+// DMB: Need to use ulimit -s 131072
+// we need really big stack for recursive flood fill (need to be reimplemented)
+//#pragma comment(linker, "/STACK:536870912")
+
+#define ZeroMemory(p, sz) memset((p), 0, (sz))
+
+uint64_t GetTickCount()
+{
+   timeval tv;
+   gettimeofday(&tv, NULL);
+   return  tv.tv_sec * 1000LL + tv.tv_usec / 1000;
+}
+
+#ifdef DMB_THREAD
 unsigned int thread_count = 3;
+#endif
 
 unsigned int DIVISOR = 600; // the lower the faster is clock, 1000 is lowest value I achieved
 #define MINSHAPESIZE 25 // if a shape is smaller than this it gets reported
@@ -113,14 +127,16 @@ unsigned int DIVISOR = 600; // the lower the faster is clock, 1000 is lowest val
 bool verbous = false;
 
 int size_x, size_y;
-unsigned __int16 *pombuf;
-unsigned __int16 *signals_metal;
-unsigned __int16 *signals_poly;
-unsigned __int16 *signals_diff;
+uint16_t *pombuf;
+uint16_t *signals_metal;
+uint16_t *signals_poly;
+uint16_t *signals_diff;
 
 // trying to keep FillObject local heap as small as possible
 int type, type2, type3;
-BitmapData *bd;
+
+png::image<png::rgb_pixel> bd;
+
 int shapesize;
 bool objectfound;
 int nextsignal;
@@ -129,8 +145,8 @@ int nextsignal;
 #define DRAIN 2
 #define SOURCE 3
 
-unsigned __int8 memory[65536];
-unsigned __int8 ports[256];
+uint8_t memory[65536];
+uint8_t ports[256];
 
 // connection to transistor remembers index of connected transistor and its terminal
 // proportion is the proportion of that transisor are to the area of all transistors connected
@@ -278,20 +294,22 @@ inline int transistor::Valuate()
 
 vector<transistor> transistors;
 
+#ifdef DMB_THREAD
 DWORD WINAPI ThreadSimulateTransistors(LPVOID thread_id)
 {
-   wprintf(L"*** Thread: %d started @%d\n", thread_id, GetTickCount());
+   printf("*** Thread: %d started @%d\n", thread_id, GetTickCount());
    for (unsigned int pogo = 0; pogo < 1000; pogo++)
    for (unsigned int j = (unsigned int) thread_id; j < transistors.size(); j += thread_count)
    {
       transistors[j].Simulate();
-   // wprintf(L"*** Thread: %d transistor: %04d\n", thread_id, j);
+   // printf("*** Thread: %d transistor: %04d\n", thread_id, j);
    }
-   wprintf(L"*** Thread: %d finished @%d\n", thread_id, GetTickCount());
+   printf("*** Thread: %d finished @%d\n", thread_id, GetTickCount());
    return NULL;
 }
 
 HANDLE *threadList = NULL;
+#endif
 
 void signal::Homogenize()
 {
@@ -542,35 +560,7 @@ int pad::ReadOutputStatus()
    return SIG_FLOATING;
 }
 
-// This is a helper function for Windows API purposes as we need to work with PNG files
-int GetEncoderClsid(const wchar_t* format, CLSID *pClsid)
-{
-   UINT pocet = 0;
-   UINT velikost = 0;
-   ImageCodecInfo *pImageCodecInfo = NULL;
-
-   GetImageEncodersSize(&pocet, &velikost);
-   if (!velikost)
-      return -1;
-   pImageCodecInfo = (ImageCodecInfo *) (malloc(velikost));
-   if (!pImageCodecInfo)
-      return -1;
-
-   GetImageEncoders(pocet, velikost, pImageCodecInfo);
-   for (UINT i = 0; i < pocet; i++)
-   {
-      if (wcscmp(pImageCodecInfo[i].MimeType, format) == 0)
-      {
-         *pClsid = pImageCodecInfo[i].Clsid;
-         free(pImageCodecInfo);
-         return i;
-      }
-   }
-   free(pImageCodecInfo);
-   return -1;
-}
-
-int GetPixelFromBitmapData(BitmapData *bd, int x, int y)
+int GetPixelFromBitmapData(png::image<png::rgb_pixel>& image, int x, int y)
 {
    if (x < 0)
       return 0;
@@ -581,17 +571,13 @@ int GetPixelFromBitmapData(BitmapData *bd, int x, int y)
    if (y >= size_y)
       return 0;
 
-   BYTE *bajt = (BYTE *) bd->Scan0 + y * bd->Stride + 3 * x;
-   int barva = *bajt++;
-   barva <<= 8;
-   barva += *bajt++;
-   barva <<= 8;
-   barva += *bajt;
+   png::rgb_pixel pixel = image[y][x];
 
-   return barva;
+   return pixel.red + (pixel.green << 8) + (pixel.blue << 16);
 }
 
-bool SetPixelToBitmapData(BitmapData *bd, int x, int y, int barva)
+
+bool SetPixelToBitmapData(png::image<png::rgba_pixel>& image, int x, int y, int barva)
 {
    if (x < 0)
       return false;
@@ -602,14 +588,10 @@ bool SetPixelToBitmapData(BitmapData *bd, int x, int y, int barva)
    if (y >= size_y)
       return false;
 
-   BYTE *bajt = (BYTE *) bd->Scan0 + y * bd->Stride + 4 * x;
-   *bajt++ = barva & 0xff;
-   *bajt++ = (barva & 0xff00) >> 8;
-   *bajt++ = (barva & 0xff0000) >> 16;
    if (barva)
-      *bajt = 0xff;
+      image[y][x] = png::rgba_pixel((barva >> 16) & 0xff, (barva >> 8) & 0xff, barva & 0xff, 0xff);
    else
-      *bajt = 0x00;
+      image[y][x] = png::rgba_pixel();
 
    return true;
 }
@@ -694,82 +676,77 @@ void ClearTemporary()
 }
 
 // opens the respective file and copies its content to pombuff which holds the layers
-void CheckFile(TCHAR *firstpart, int ltype)
+void CheckFile(char *firstpart, int ltype)
 {
    type = ltype;
 
-   TCHAR filename[256];
+   char filename[256];
    if (type == VIAS)
-      wsprintf(filename, L"%s%s", firstpart, L"_vias.png");
+      sprintf(filename, "%s%s", firstpart, "_vias.png");
    if (type == METAL)
-      wsprintf(filename, L"%s%s", firstpart, L"_metal.png");
+      sprintf(filename, "%s%s", firstpart, "_metal.png");
    if (type == PADS)
-      wsprintf(filename, L"%s%s", firstpart, L"_pads.png");
+      sprintf(filename, "%s%s", firstpart, "_pads.png");
    if (type == POLYSILICON)
-      wsprintf(filename, L"%s%s", firstpart, L"_polysilicon.png");
+      sprintf(filename, "%s%s", firstpart, "_polysilicon.png");
    if (type == DIFFUSION)
-      wsprintf(filename, L"%s%s", firstpart, L"_diffusion.png");
+      sprintf(filename, "%s%s", firstpart, "_diffusion.png");
    if (type == BURIED)
-      wsprintf(filename, L"%s%s", firstpart, L"_buried.png");
+      sprintf(filename, "%s%s", firstpart, "_buried.png");
    if (type == ION_IMPLANTS)
-      wsprintf(filename, L"%s%s", firstpart, L"_ions.png");
+      sprintf(filename, "%s%s", firstpart, "_ions.png");
    if (verbous)
-      wprintf(filename);
+      printf("%s", filename);
 
-   Bitmap *bitmapa;
-   bitmapa = new Bitmap(filename);
-   if (bitmapa->GetLastStatus() != Ok)
-   {
-      wprintf(L"\nCannot open file: %s\n", filename);
-      delete bitmapa;
-      return;
+   try {
+
+      png::image<png::rgb_pixel> bitmapa(filename);
+
+      size_x = bitmapa.get_width();
+      size_y = bitmapa.get_height();
+
+      if (verbous)
+         printf(" size x: %d, y: %d\n", size_x, size_y);
+
+      if (!pombuf)
+      {
+         pombuf = new uint16_t[size_x * size_y];
+         ZeroMemory(&pombuf[0], size_x * size_y * sizeof(uint16_t));
+      }
+
+      // Assign global variable, used by FillObject
+      bd = bitmapa;
+
+      int bitmap_room = 0;
+      for (int y = 0; y < size_y; y++)
+         for (int x = 0; x < size_x; x++)
+            if (GetPixelFromBitmapData(bitmapa, x, y))
+               bitmap_room++;
+      if (verbous)
+         printf("Percentage: %.2f%%\n", 100.0 * bitmap_room / size_x / size_y);
+
+      int bitmap_count = 0;
+      for (int y = 0; y < size_y; y++)
+         for (int x = 0; x < size_x; x++)
+            if (shapesize = 0, FillObject(x, y))
+            {
+               bitmap_count++;
+               if (shapesize < MINSHAPESIZE)
+                  if (verbous)
+                     printf("Object at %d, %d is too small.\n", x, y);
+            }
+      if (verbous)
+      {
+         printf("Count: %d\n", bitmap_count);
+         printf("---------------------\n");
+      }
+
+   } catch (png::std_error e) {
+      printf("\nCannot open file: %s\n", filename);
+      ::exit(1);
    }
-
-   size_x = bitmapa->GetWidth();
-   size_y = bitmapa->GetHeight();
-
-   if (verbous)
-      wprintf(L" size x: %d, y: %d\n", size_x, size_y);
-
-   if (!pombuf)
-   {
-      pombuf = new unsigned __int16[size_x * size_y];
-      ZeroMemory(&pombuf[0], size_x * size_y * sizeof(unsigned __int16));
-   }
-
-   BitmapData bitmapdata;
-   bitmapa->LockBits(&Rect(0, 0, size_x, size_y), ImageLockModeRead, PixelFormat24bppRGB, &bitmapdata);
-   if (verbous)
-      wprintf(L"Bitmap x: %d, y: %d, stride: %d\n", bitmapdata.Width, bitmapdata.Height, bitmapdata.Stride);
-   bd = &bitmapdata;
-
-   int bitmap_room = 0;
-   for (int y = 0; y < size_y; y++)
-      for (int x = 0; x < size_x; x++)
-         if (GetPixelFromBitmapData(&bitmapdata, x, y))
-            bitmap_room++;
-   if (verbous)
-      wprintf(L"Percentage: %.2f%%\n", 100.0 * bitmap_room / size_x / size_y);
-
-   int bitmap_count = 0;
-   for (int y = 0; y < size_y; y++)
-      for (int x = 0; x < size_x; x++)
-         if (shapesize = 0, FillObject(x, y))
-         {
-            bitmap_count++;
-            if (shapesize < MINSHAPESIZE)
-               if (verbous)
-                  wprintf(L"Object at %d, %d is too small.\n", x, y);
-         }
-   if (verbous)
-   {
-      wprintf(L"Count: %d\n", bitmap_count);
-      wprintf(L"---------------------\n");
-   }
-
-   bitmapa->UnlockBits(&bitmapdata);
-   delete bitmapa;
 }
+
 
 // routes the signal thru all the layers - necessary for numbering the signals
 bool RouteSignal(int x, int y, int sig_num, int layer)
@@ -807,7 +784,7 @@ bool RouteSignal(int x, int y, int sig_num, int layer)
    {
       if (pomsig != sig_num)
          if (verbous)
-            wprintf(L"Signal mismatch %d vs %d at %d, %d\n", sig_num, pomsig, x, y);
+            printf("Signal mismatch %d vs %d at %d, %d\n", sig_num, pomsig, x, y);
       return false;
    }
 
@@ -891,7 +868,7 @@ void SetSourceDran(int x, int y, int value)
             else
             {
                if (verbous)
-                  wprintf(L"Transistor has more than 3 terminals at %d %d.\n", x, y);
+                  printf("Transistor has more than 3 terminals at %d %d.\n", x, y);
             }
          }
       }
@@ -909,14 +886,14 @@ int GetRegVal(unsigned int reg[])
 
 void WriteTransCoords(int bit7, int bit6, int bit5, int bit4, int bit3, int bit2, int bit1, int bit0)
 {
-   wprintf(L"[%d, %d], ", transistors[bit7].x, transistors[bit7].y);
-   wprintf(L"[%d, %d], ", transistors[bit6].x, transistors[bit6].y);
-   wprintf(L"[%d, %d], ", transistors[bit5].x, transistors[bit5].y);
-   wprintf(L"[%d, %d], ", transistors[bit4].x, transistors[bit4].y);
-   wprintf(L"[%d, %d], ", transistors[bit3].x, transistors[bit3].y);
-   wprintf(L"[%d, %d], ", transistors[bit2].x, transistors[bit2].y);
-   wprintf(L"[%d, %d], ", transistors[bit1].x, transistors[bit1].y);
-   wprintf(L"[%d, %d]", transistors[bit0].x, transistors[bit0].y);
+   printf("[%d, %d], ", transistors[bit7].x, transistors[bit7].y);
+   printf("[%d, %d], ", transistors[bit6].x, transistors[bit6].y);
+   printf("[%d, %d], ", transistors[bit5].x, transistors[bit5].y);
+   printf("[%d, %d], ", transistors[bit4].x, transistors[bit4].y);
+   printf("[%d, %d], ", transistors[bit3].x, transistors[bit3].y);
+   printf("[%d, %d], ", transistors[bit2].x, transistors[bit2].y);
+   printf("[%d, %d], ", transistors[bit1].x, transistors[bit1].y);
+   printf("[%d, %d]", transistors[bit0].x, transistors[bit0].y);
 }
 
 // finds the transistor by coordinates - the coordinations must be upper - left corner ie the most top (first) and most left (second) corner
@@ -925,7 +902,7 @@ int FindTransistor(unsigned int x, unsigned int y)
    for (unsigned int i = 0; i < transistors.size(); i++)
       if (transistors[i].x == x && transistors[i].y == y)
          return i;
-   wprintf(L"--- Error --- Transistor at %d, %d not found.\n", x, y);
+   printf("--- Error --- Transistor at %d, %d not found.\n", x, y);
    return -1;
 }
 
@@ -936,12 +913,12 @@ void CheckTransistor(int x, int y)
 
    if (!signals_poly[y * size_x + x])
       if (verbous)
-         wprintf(L"Transistor with no signal in gate at: %d %d.\n", x, y);
+         printf("Transistor with no signal in gate at: %d %d.\n", x, y);
    if (!gate)
       gate = signals_poly[y * size_x + x];
    if (gate != signals_poly[y * size_x + x])
       if (verbous)
-         wprintf(L"Ambiguous signals in poly for transistor at: %d %d.\n", x, y);
+         printf("Ambiguous signals in poly for transistor at: %d %d.\n", x, y);
 
    pombuf[y * size_x + x] |= TEMPORARY;
    shapesize++;
@@ -1017,13 +994,12 @@ void SetupPad(int x, int y, int signalnum, int padtype)
 }
 
 // Everything starts here
-int _tmain(int argc, _TCHAR* argv[])
+int main(int argc, char *argv[])
 {
-   timeBeginPeriod(1);
-   __int64 duration = GetTickCount();
+   int64_t duration = GetTickCount();
 
-   ZeroMemory(&memory[0], 65536 * sizeof(unsigned __int8));
-   ZeroMemory(&ports[0], 256 * sizeof(unsigned __int8));
+   ZeroMemory(&memory[0], 65536 * sizeof(uint8_t));
+   ZeroMemory(&ports[0], 256 * sizeof(uint8_t));
 
    // Simulated Z80 program
 
@@ -1048,7 +1024,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
    if (argc < 2)
    {
-      wprintf(L"Need filename as argument.\n");
+      printf("Need filename as argument.\n");
       return 0;
    }
 
@@ -1057,89 +1033,91 @@ int _tmain(int argc, _TCHAR* argv[])
 
    for (int i = 2; i < argc; i++)
    {
-      if (!::lstrcmpW(argv[i], L"-verbous"))
+      if (!::strcmp(argv[i], "-verbous"))
          verbous = true;
-      else if (!::lstrcmpW(argv[i], L"-quiet"))
+      else if (!::strcmp(argv[i], "-quiet"))
          verbous = false;
-      else if (!::lstrcmpW(argv[i], L"-outfile"))
+      else if (!::strcmp(argv[i], "-outfile"))
       {
          i++;
          if (argc == i)
          {
-            wprintf(L"Filename of outfile expected.\n");
+            printf("Filename of outfile expected.\n");
          }
          else
          {
             if (outfile)
                fclose(outfile);
-            outfile = ::_wfopen((const wchar_t *) argv[i], L"wb");
+            outfile = ::fopen(argv[i], "wb");
             if (!outfile)
-               wprintf(L"Couldn't open %s as outfile.\n", argv[i]);
+               printf("Couldn't open %s as outfile.\n", argv[i]);
          }
       }
-      else if (!::lstrcmpW(argv[i], L"-locale"))
+      else if (!::strcmp(argv[i], "-locale"))
       {
          i++;
          if (argc == i)
          {
-            wprintf(L"Locale specifier expected.\n");
+            printf("Locale specifier expected.\n");
          }
          else
          {
-            wchar_t *tmp = _wsetlocale(LC_ALL, argv[i]);
+            char *tmp = setlocale(LC_ALL, argv[i]);
             if (!tmp)
-               wprintf(L"Couldn't set locale %s.\n", argv[i]);
+               printf("Couldn't set locale %s.\n", argv[i]);
          }
       }
-      else if (!::lstrcmpW(argv[i], L"-divisor"))
+      else if (!::strcmp(argv[i], "-divisor"))
       {
          i++;
          if (argc == i)
          {
-            wprintf(L"Divisor value (100 - 10000) expected.\n");
+            printf("Divisor value (100 - 10000) expected.\n");
          }
          else
          {
-            int pomdivisor = _wtoi(argv[i]);
+            int pomdivisor = atoi(argv[i]);
             if (pomdivisor < 100 || pomdivisor > 10000)
-               wprintf(L"Divisor out of limit (100 - 10000): %d.\n", pomdivisor);
+               printf("Divisor out of limit (100 - 10000): %d.\n", pomdivisor);
             else
                DIVISOR = pomdivisor;
          }
       }
-      else if (!::lstrcmpW(argv[i], L"-memfile"))
+      else if (!::strcmp(argv[i], "-memfile"))
       {
          i++;
          if (argc == i)
          {
-            wprintf(L"Filename of memfile expected.\n");
+            printf("Filename of memfile expected.\n");
          }
          else
          {
             i++;
             if (argc == i)
             {
-               wprintf(L"Expected destination address memfile.\n");
+               printf("Expected destination address memfile.\n");
             }
             else
             {
-               int pomaddress = _wtoi(argv[i]);
+               int pomaddress = atoi(argv[i]);
                if (pomaddress < 0 || pomaddress > 65536)
-                  wprintf(L"Destination address out of limit (0 - 65535): %d.\n", pomaddress);
+                  printf("Destination address out of limit (0 - 65535): %d.\n", pomaddress);
                else
                {
-                  FILE *memfile = _wfopen((const wchar_t *) argv[i-1], L"rb");
+                  FILE *memfile = ::fopen(argv[i-1], "rb");
                   if (!memfile)
-                     wprintf(L"Couldn't open %s as memfile.\n", argv[i-1]);
+                     printf("Couldn't open %s as memfile.\n", argv[i-1]);
                   ::fseek(memfile, 0, SEEK_END);
                   int filelen = ::ftell(memfile);
                   ::fseek(memfile, 0, SEEK_SET);
                   if (pomaddress + filelen > 65536)
                   {
-                     wprintf(L"Memfile %s too long for specified destination address (%d). Only part will be read.\n", argv[i-1], pomaddress);
+                     printf("Memfile %s too long for specified destination address (%d). Only part will be read.\n", argv[i-1], pomaddress);
                      filelen = 65536 - pomaddress;
                   }
-                  ::fread(&memory[pomaddress], 1, filelen, memfile);
+                  if (::fread(&memory[pomaddress], 1, filelen, memfile) <= 0) {
+                     printf("Couldn't read %s as memfile.\n", argv[i-1]);                     
+                  }
                   ::fclose(memfile);
                }
             }
@@ -1147,17 +1125,13 @@ int _tmain(int argc, _TCHAR* argv[])
       }
       else
       {
-         wprintf(L"Unknown switch %s.\n", argv[i]);
+         printf("Unknown switch %s.\n", argv[i]);
       }
    }
 
+#ifdef DMB_THREAD
    threadList = new HANDLE[thread_count];
-
-   // initializes GDI+ for PNG files manipulation
-   ULONG_PTR gdiplusToken;
-   GdiplusStartupInput gdiplusStartupInput;
-   if (GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL) != Ok)
-      wprintf(L"Cannot initialize GDI+\n");
+#endif
 
    // Loads the layers to pombuffer[]
    CheckFile(argv[1], METAL);
@@ -1173,25 +1147,25 @@ int _tmain(int argc, _TCHAR* argv[])
       for (int x = 0; x < size_x; x++)
          if ((pombuf[y * size_x + x] & (VIAS | METAL)) == VIAS)
             if (verbous)
-               wprintf(L"Via without metal at: %d %d.\n", x, y);
+               printf("Via without metal at: %d %d.\n", x, y);
 
    for (int y = 0; y < size_y; y++)
       for (int x = 0; x < size_x; x++)
          if ((pombuf[y * size_x + x] & (VIAS | DIFFUSION | POLYSILICON)) == VIAS)
             if (verbous)
-               wprintf(L"Via to nowhere at: %d %d.\n", x, y);
+               printf("Via to nowhere at: %d %d.\n", x, y);
 
    for (int y = 0; y < size_y; y++)
       for (int x = 0; x < size_x; x++)
          if ((pombuf[y * size_x + x] & (VIAS | METAL | DIFFUSION | POLYSILICON)) == (VIAS | METAL | DIFFUSION | POLYSILICON))
             if (verbous)
-               wprintf(L"Via both to polysilicon and diffusion at: %d %d.\n", x, y);
+               printf("Via both to polysilicon and diffusion at: %d %d.\n", x, y);
 
    for (int y = 0; y < size_y; y++)
       for (int x = 0; x < size_x; x++)
          if ((pombuf[y * size_x + x] & (VIAS | BURIED)) == (VIAS | BURIED))
             if (verbous)
-               wprintf(L"Buried under via at: %d %d.\n", x, y);
+               printf("Buried under via at: %d %d.\n", x, y);
 
    int structure_count = 0;
    type = TRANSISTORS;
@@ -1204,12 +1178,12 @@ int _tmain(int argc, _TCHAR* argv[])
             structure_count++;
             if (shapesize < 25)
                if (verbous)
-                  wprintf(L"Transistor at %d, %d is too small.\n", x, y);
+                  printf("Transistor at %d, %d is too small.\n", x, y);
          }
    if (verbous)
    {
-      wprintf(L"---------------------\n");
-      wprintf(L"Transistor count: %d\n", structure_count);
+      printf("---------------------\n");
+      printf("Transistor count: %d\n", structure_count);
    }
 
    structure_count = 0;
@@ -1223,10 +1197,10 @@ int _tmain(int argc, _TCHAR* argv[])
             structure_count++;
             if (shapesize < 25)
                if (verbous)
-                  wprintf(L"Via to poly at %d, %d is too small.\n", x, y);
+                  printf("Via to poly at %d, %d is too small.\n", x, y);
          }
    if (verbous)
-      wprintf(L"Vias to poly count: %d\n", structure_count);
+      printf("Vias to poly count: %d\n", structure_count);
 
    structure_count = 0;
    type = VIAS_TO_DIFFUSION;
@@ -1239,10 +1213,10 @@ int _tmain(int argc, _TCHAR* argv[])
             structure_count++;
             if (shapesize < 25)
                if (verbous)
-                  wprintf(L"Via to diffusion at %d, %d is too small.\n", x, y);
+                  printf("Via to diffusion at %d, %d is too small.\n", x, y);
          }
    if (verbous)
-      wprintf(L"Vias to diffusion count: %d\n", structure_count);
+      printf("Vias to diffusion count: %d\n", structure_count);
 
    structure_count = 0;
    type = BURIED_CONTACT;
@@ -1255,10 +1229,10 @@ int _tmain(int argc, _TCHAR* argv[])
             structure_count++;
             if (shapesize < 25)
                if (verbous)
-                  wprintf(L"Buried contact at %d, %d is too small.\n", x, y);
+                  printf("Buried contact at %d, %d is too small.\n", x, y);
          }
    if (verbous)
-      wprintf(L"Buried contacts count: %d\n", structure_count);
+      printf("Buried contacts count: %d\n", structure_count);
 
    structure_count = 0;
    type = REAL_DIFFUSION;
@@ -1271,10 +1245,10 @@ int _tmain(int argc, _TCHAR* argv[])
             structure_count++;
             if (shapesize < 25)
                if (verbous)
-                  wprintf(L"Real diffusion at %d, %d is too small.\n", x, y);
+                  printf("Real diffusion at %d, %d is too small.\n", x, y);
          }
    if (verbous)
-      wprintf(L"Real diffusions count: %d\n", structure_count);
+      printf("Real diffusions count: %d\n", structure_count);
 
    type = TEMPORARY;
    type2 = ION_IMPLANTS;
@@ -1284,15 +1258,15 @@ int _tmain(int argc, _TCHAR* argv[])
          if (objectfound = false, FillStructureCheck(x, y))
             if (!objectfound)
                if (verbous)
-                  wprintf(L"Ion implant without transistor at: %d %d.\n", x, y);
+                  printf("Ion implant without transistor at: %d %d.\n", x, y);
    ClearTemporary();
 
-   signals_metal = new unsigned __int16[size_x * size_y];
-   ZeroMemory(&signals_metal[0], size_x * size_y * sizeof(unsigned __int16));
-   signals_poly = new unsigned __int16[size_x * size_y];
-   ZeroMemory(&signals_poly[0], size_x * size_y * sizeof(unsigned __int16));
-   signals_diff = new unsigned __int16[size_x * size_y];
-   ZeroMemory(&signals_diff[0], size_x * size_y * sizeof(unsigned __int16));
+   signals_metal = new uint16_t[size_x * size_y];
+   ZeroMemory(&signals_metal[0], size_x * size_y * sizeof(uint16_t));
+   signals_poly = new uint16_t[size_x * size_y];
+   ZeroMemory(&signals_poly[0], size_x * size_y * sizeof(uint16_t));
+   signals_diff = new uint16_t[size_x * size_y];
+   ZeroMemory(&signals_diff[0], size_x * size_y * sizeof(uint16_t));
 
    // Routes first few named signals
    RouteSignal(250, 2600, SIG_GND, METAL);
@@ -1362,7 +1336,7 @@ int _tmain(int argc, _TCHAR* argv[])
          if (!signals_metal[y * size_x + x] && (pombuf[y * size_x + x] & PADS))
          {
             if (verbous)
-               wprintf(L"*** Pad at x:%d y:%d signal:%d\n", x, y, nextsignal);
+               printf("*** Pad at x:%d y:%d signal:%d\n", x, y, nextsignal);
             RouteSignal(x, y, nextsignal, METAL);
             nextsignal++;
          }
@@ -1370,8 +1344,8 @@ int _tmain(int argc, _TCHAR* argv[])
    }
    if (verbous)
    {
-      wprintf(L"---------------------\n");
-      wprintf(L"Pads have %d signals.\n", nextsignal - 1);
+      printf("---------------------\n");
+      printf("Pads have %d signals.\n", nextsignal - 1);
    }
 
    // finds the rest of signals starting from METAL then in POLYSILICON and then DIFFUSION
@@ -1387,7 +1361,7 @@ int _tmain(int argc, _TCHAR* argv[])
       }
    }
    if (verbous)
-      wprintf(L"Metal has %d signals.\n", nextsignal - 1);
+      printf("Metal has %d signals.\n", nextsignal - 1);
 
    for (int y = 0; y < size_y; y++)
    {
@@ -1401,7 +1375,7 @@ int _tmain(int argc, _TCHAR* argv[])
       }
    }
    if (verbous)
-      wprintf(L"Metal and polysilicon have %d signals.\n", nextsignal - 1);
+      printf("Metal and polysilicon have %d signals.\n", nextsignal - 1);
 
    for (int y = 0; y < size_y; y++)
    {
@@ -1415,7 +1389,7 @@ int _tmain(int argc, _TCHAR* argv[])
       }
    }
    if (verbous)
-      wprintf(L"All together we have %d signals.\n", nextsignal - 1);
+      printf("All together we have %d signals.\n", nextsignal - 1);
 
    // here the transistors are tested for sanity and put into the vector i.e. list of transistors is built
 
@@ -1439,16 +1413,16 @@ int _tmain(int argc, _TCHAR* argv[])
             CheckTransistor(x, y);
             if (!source)
                if (verbous)
-                  wprintf(L"Isolated transistor at %d, %d.\n", x, y);
+                  printf("Isolated transistor at %d, %d.\n", x, y);
             if (!drain)
             {
                if (verbous)
-                  wprintf(L"Capacitor at %d, %d\n", x, y);
+                  printf("Capacitor at %d, %d\n", x, y);
                capacitors++;
             }
             if ((source == SIG_VCC) && (drain == SIG_GND))
                if (verbous)
-                  wprintf(L"SHORTAGE at %d, %d?\n", x, y);
+                  printf("SHORTAGE at %d, %d?\n", x, y);
             if (source == SIG_VCC)
             {
                int tmp = source;
@@ -1476,7 +1450,7 @@ int _tmain(int argc, _TCHAR* argv[])
                else
                {
                   if (verbous)
-                     wprintf(L"Transistor always off at %d, %d?\n", x, y);
+                     printf("Transistor always off at %d, %d?\n", x, y);
                }
             }
             else if (gate == SIG_VCC)
@@ -1498,7 +1472,7 @@ int _tmain(int argc, _TCHAR* argv[])
             if ((source != SIG_GND) && (drain != SIG_VCC) && ((gate == source) || (gate == drain)))
             {
                if (verbous)
-                  wprintf(L"Diode / resistor at %d, %d.\n", x, y);
+                  printf("Diode / resistor at %d, %d.\n", x, y);
                diodes++;
             }
             transistor pomtran;
@@ -1683,16 +1657,16 @@ int _tmain(int argc, _TCHAR* argv[])
 
    if (verbous)
    {
-      wprintf(L"---------------------\n");
-      wprintf(L"Num of capacitors: %d\n", capacitors);
-      wprintf(L"Num of resistors: %d\n", resistors);
-      wprintf(L"Num of protecting diodes: %d\n", protecting);
-      wprintf(L"Num of depletion pull ups: %d\n", pullups_dep);
-      wprintf(L"Num of enhancement pull ups: %d\n", pullups_enh);
-      wprintf(L"Num of pull downs: %d\n", pulldowns);
-      wprintf(L"Num of diodes: %d\n", diodes);
+      printf("---------------------\n");
+      printf("Num of capacitors: %d\n", capacitors);
+      printf("Num of resistors: %d\n", resistors);
+      printf("Num of protecting diodes: %d\n", protecting);
+      printf("Num of depletion pull ups: %d\n", pullups_dep);
+      printf("Num of enhancement pull ups: %d\n", pullups_enh);
+      printf("Num of pull downs: %d\n", pulldowns);
+      printf("Num of diodes: %d\n", diodes);
 
-      wprintf(L"---------------------\n");
+      printf("---------------------\n");
    }
 
    // ================================================================
@@ -1705,13 +1679,13 @@ int _tmain(int argc, _TCHAR* argv[])
 
 /* for (unsigned int i = 0; i < pads.size(); i++)
    {
-      wprintf(L"*** Pad at x:%d y:%d signal:%d cons:%d type:%s\n",
-         pads[i].x, pads[i].y, pads[i].origsignal, pads[i].connections.size(), (pads[i].type == PAD_INPUT ? L"I" : ((pads[i].type == PAD_OUTPUT) ? L"O" : L"B")));
+      printf("*** Pad at x:%d y:%d signal:%d cons:%d type:%s\n",
+         pads[i].x, pads[i].y, pads[i].origsignal, pads[i].connections.size(), (pads[i].type == PAD_INPUT ? "I" : ((pads[i].type == PAD_OUTPUT) ? "O" : "B")));
    }
 
    for (unsigned int i = 0; i < transistors.size(); i++)
    {
-      wprintf(L"*** Transistor at x:%d y:%d area:%d gate:%d source:%d drain:%d, sourcelen:%d drainlen:%d otherlen:%d gatecon:%d sourcecon:%d draincon:%d\n",
+      printf("*** Transistor at x:%d y:%d area:%d gate:%d source:%d drain:%d, sourcelen:%d drainlen:%d otherlen:%d gatecon:%d sourcecon:%d draincon:%d\n",
          transistors[i].x, transistors[i].y, int(transistors[i].area), transistors[i].gate, transistors[i].source, transistors[i].drain,
          transistors[i].sourcelen, transistors[i].drainlen, transistors[i].otherlen,
          transistors[i].gateconnections.size(), transistors[i].sourceconnections.size(), transistors[i].drainconnections.size());
@@ -1723,41 +1697,27 @@ int _tmain(int argc, _TCHAR* argv[])
    // ========================================================================================================================
    // ========================================================================================================================
 
-   Bitmap *myBitmap = new Bitmap(size_x, size_y);
-   BitmapData bitmapdata;
-   myBitmap->LockBits(&Rect(0, 0, size_x, size_y), ImageLockModeWrite, PixelFormat32bppARGB, &bitmapdata);
-   bd = &bitmapdata;
+   png::image<png::rgba_pixel> myImage(size_x, size_y);
+   char filename[256];
 
    for (int y = 0; y < size_y; y++)
    {
       for (int x = 0; x < size_x; x++)
       {
          if (signals_metal[y * size_x + x] == SIG_GND)
-            ::SetPixelToBitmapData(bd, x, y, 0x0000ff);
+            ::SetPixelToBitmapData(myImage, x, y, 0x0000ff);
          else if (signals_metal[y * size_x + x] == SIG_VCC)
-            ::SetPixelToBitmapData(bd, x, y, 0xff0000);
+            ::SetPixelToBitmapData(myImage, x, y, 0xff0000);
          else if (signals_metal[y * size_x + x] == PAD_CLK)
-            ::SetPixelToBitmapData(bd, x, y, 0xffffff);
+            ::SetPixelToBitmapData(myImage, x, y, 0xffffff);
          else if (pombuf[y * size_x + x] & METAL)
-            ::SetPixelToBitmapData(bd, x, y, 0x00ff00);
+            ::SetPixelToBitmapData(myImage, x, y, 0x00ff00);
          else
-            ::SetPixelToBitmapData(bd, x, y, 0x000000);
+            ::SetPixelToBitmapData(myImage, x, y, 0x000000);
       }
    }
-
-   myBitmap->UnlockBits(&bitmapdata);
-
-   TCHAR filename[256];
-   wsprintf(filename, L"%s%s", argv[1], L"_metal_VCC_GND.png");
-
-   CLSID pngClsid;
-   GetEncoderClsid(L"image/png", &pngClsid);
-   myBitmap->Save(filename, &pngClsid);
-
-   // -------------------------------------------------------
-
-   myBitmap->LockBits(&Rect(0, 0, size_x, size_y), ImageLockModeWrite, PixelFormat32bppARGB, &bitmapdata);
-   bd = &bitmapdata;
+   sprintf(filename, "%s%s", argv[1], "_metal_VCC_GND.png");
+   myImage.write(filename);
 
    for (int y = 0; y < size_y; y++)
    {
@@ -1766,28 +1726,23 @@ int _tmain(int argc, _TCHAR* argv[])
          if (pombuf[y * size_x + x] & VIAS)
          {
             if (signals_metal[y * size_x + x] == SIG_GND)
-               ::SetPixelToBitmapData(bd, x, y, 0x3f3fff);
+               ::SetPixelToBitmapData(myImage, x, y, 0x3f3fff);
             else if (signals_metal[y * size_x + x] == SIG_VCC)
-               ::SetPixelToBitmapData(bd, x, y, 0xff3f3f);
+               ::SetPixelToBitmapData(myImage, x, y, 0xff3f3f);
             else if (signals_metal[y * size_x + x] == PAD_CLK)
-               ::SetPixelToBitmapData(bd, x, y, 0xffffff);
+               ::SetPixelToBitmapData(myImage, x, y, 0xffffff);
             else
-               ::SetPixelToBitmapData(bd, x, y, 0xff7f00);
+               ::SetPixelToBitmapData(myImage, x, y, 0xff7f00);
          }
          else
          {
-            ::SetPixelToBitmapData(bd, x, y, 0x000000);
+            ::SetPixelToBitmapData(myImage, x, y, 0x000000);
          }
       }
    }
+   sprintf(filename, "%s%s", argv[1], "_vias_VCC_GND.png");
+   myImage.write(filename);
 
-   myBitmap->UnlockBits(&bitmapdata);
-
-   wsprintf(filename, L"%s%s", argv[1], L"_vias_VCC_GND.png");
-   myBitmap->Save(filename, &pngClsid);
-
-   delete myBitmap;
-   GdiplusShutdown(gdiplusToken);
 
    // =============================
    // End of saving colored bitmaps
@@ -1823,8 +1778,8 @@ int _tmain(int argc, _TCHAR* argv[])
    duration = GetTickCount() - duration;
    if (verbous)
    {
-      wprintf(L"---------------------\n");
-      wprintf(L"Duration: %dms\n\n", duration);
+      printf("---------------------\n");
+      printf("Duration: %ldms\n\n", duration);
    }
    duration = GetTickCount();
 
@@ -2159,9 +2114,9 @@ int _tmain(int argc, _TCHAR* argv[])
    // ============================= Simulation =============================
    // ======================================================================
 
-   wprintf(L"-------------------------------------------------------\n");
-   wprintf(L"----------------- Starting simulation -----------------\n");
-   wprintf(L"-------------------------------------------------------\n");
+   printf("-------------------------------------------------------\n");
+   printf("----------------- Starting simulation -----------------\n");
+   printf("-------------------------------------------------------\n");
 
    int totcycles = 0;
 
@@ -2356,7 +2311,7 @@ int _tmain(int argc, _TCHAR* argv[])
       }
 
 /*    DWORD threadID;
-      wprintf(L"--- Starting threads @%d\n", GetTickCount());
+      printf("--- Starting threads @%d\n", GetTickCount());
       for (unsigned int t = 0; t < thread_count; t++)
          threadList[t] = CreateThread(NULL, 0, ThreadSimulateTransistors, (LPVOID) t, NULL, &threadID);
       WaitForMultipleObjects(thread_count, threadList, TRUE, INFINITE);
@@ -2364,7 +2319,7 @@ int _tmain(int argc, _TCHAR* argv[])
          CloseHandle(threadList[t]);
    // WaitForSingleObject(threadList[0], INFINITE);
    // WaitForSingleObject(threadList[1], INFINITE);
-      wprintf(L"--- Threads stopped @%d\n", GetTickCount());*/
+      printf("--- Threads stopped @%d\n", GetTickCount());*/
 
       for (unsigned int j = 0; j < signals.size(); j++)
          if (!signals[j].ignore)
@@ -2375,15 +2330,15 @@ int _tmain(int argc, _TCHAR* argv[])
 
       // Reading output pads
       if (!(i % (DIVISOR * 5)))
-      {
-         wprintf(L"       : C// // // // AAAA AA                      \n", i);
-         wprintf(L"       : LRH MR RW MI 1111 11AA AAAA AAAA DDDD DDDD\n", i);
-         wprintf(L"       : KSL 1F DR QQ 5432 1098 7654 3210 7654 3210\n", i);
+{
+         printf("       : C// // // // AAAA AA                      \n");
+         printf("       : LRH MR RW MI 1111 11AA AAAA AAAA DDDD DDDD\n");
+         printf("       : KSL 1F DR QQ 5432 1098 7654 3210 7654 3210\n");
       }
 
       if (!(i % (DIVISOR / 5))) // writes out every 100s cycle (for output to be not too verbous)
       {
-         wprintf(L"%07d: ", i);
+         printf("%07d: ", i);
          for (unsigned int j = 0; j < pads.size(); j++)
          {
             int pom;
@@ -2404,248 +2359,248 @@ int _tmain(int argc, _TCHAR* argv[])
             else
                pom2--;
             if (pads[j].origsignal == PAD_CLK)
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
             if (pads[j].origsignal == PAD__RESET)
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
             if (pads[j].origsignal == PAD__HALT)
             {
                pom_halt = (pom2 == '1');
-               wprintf(L"%c ", pom2);
+               printf("%c ", pom2);
             }
             if (pads[j].origsignal == PAD__M1)
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
             if (pads[j].origsignal == PAD__RFSH)
-               wprintf(L"%c ", pom2);
+               printf("%c ", pom2);
             if (pads[j].origsignal == PAD__RD)
             {
                pom_rd = (pom2 == '1');
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
             }
             if (pads[j].origsignal == PAD__WR)
             {
                pom_wr = (pom2 == '1');
-               wprintf(L"%c ", pom2);
+               printf("%c ", pom2);
             }
             if (pads[j].origsignal == PAD__MREQ)
             {
                pom_mreq = (pom2 == '1');
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
             }
             if (pads[j].origsignal == PAD__IORQ)
             {
                pom_iorq = (pom2 == '1');
-               wprintf(L"%c ", pom2);
+               printf("%c ", pom2);
             }
             if (pads[j].origsignal == PAD_A15)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x8000;
                pomadr |= (pom2 == '1') ? 0x8000 : 0;
             }
             if (pads[j].origsignal == PAD_A14)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x4000;
                pomadr |= (pom2 == '1') ? 0x4000 : 0;
             }
             if (pads[j].origsignal == PAD_A13)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x2000;
                pomadr |= (pom2 == '1') ? 0x2000 : 0;
             }
             if (pads[j].origsignal == PAD_A12)
             {
-               wprintf(L"%c ", pom2);
+               printf("%c ", pom2);
                pomadr &= ~0x1000;
                pomadr |= (pom2 == '1') ? 0x1000 : 0;
             }
             if (pads[j].origsignal == PAD_A11)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x0800;
                pomadr |= (pom2 == '1') ? 0x0800 : 0;
             }
             if (pads[j].origsignal == PAD_A10)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x0400;
                pomadr |= (pom2 == '1') ? 0x0400 : 0;
             }
             if (pads[j].origsignal == PAD_A9)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x0200;
                pomadr |= (pom2 == '1') ? 0x0200 : 0;
             }
             if (pads[j].origsignal == PAD_A8)
             {
-               wprintf(L"%c ", pom2);
+               printf("%c ", pom2);
                pomadr &= ~0x0100;
                pomadr |= (pom2 == '1') ? 0x0100 : 0;
             }
             if (pads[j].origsignal == PAD_A7)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x0080;
                pomadr |= (pom2 == '1') ? 0x0080 : 0;
             }
             if (pads[j].origsignal == PAD_A6)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x0040;
                pomadr |= (pom2 == '1') ? 0x0040 : 0;
             }
             if (pads[j].origsignal == PAD_A5)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x0020;
                pomadr |= (pom2 == '1') ? 0x0020 : 0;
             }
             if (pads[j].origsignal == PAD_A4)
             {
-               wprintf(L"%c ", pom2);
+               printf("%c ", pom2);
                pomadr &= ~0x0010;
                pomadr |= (pom2 == '1') ? 0x0010 : 0;
             }
             if (pads[j].origsignal == PAD_A3)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x0008;
                pomadr |= (pom2 == '1') ? 0x0008 : 0;
 
             }
             if (pads[j].origsignal == PAD_A2)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x0004;
                pomadr |= (pom2 == '1') ? 0x0004 : 0;
             }
             if (pads[j].origsignal == PAD_A1)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                pomadr &= ~0x0002;
                pomadr |= (pom2 == '1') ? 0x0002 : 0;
             }
             if (pads[j].origsignal == PAD_A0)
             {
-               wprintf(L"%c ", pom2);
+               printf("%c ", pom2);
                pomadr &= ~0x0001;
                pomadr |= (pom2 == '1') ? 0x0001 : 0;
             }
             if (pads[j].origsignal == PAD_D7)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                lastdata &= ~0x80;
                lastdata |= (pom2 == '1') ? 0x80 : 0;
             }
             if (pads[j].origsignal == PAD_D6)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                lastdata &= ~0x40;
                lastdata |= (pom2 == '1') ? 0x40 : 0;
             }
             if (pads[j].origsignal == PAD_D5)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                lastdata &= ~0x20;
                lastdata |= (pom2 == '1') ? 0x20 : 0;
             }
             if (pads[j].origsignal == PAD_D4)
             {
-               wprintf(L"%c ", pom2);
+               printf("%c ", pom2);
                lastdata &= ~0x10;
                lastdata |= (pom2 == '1') ? 0x10 : 0;
             }
             if (pads[j].origsignal == PAD_D3)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                lastdata &= ~0x08;
                lastdata |= (pom2 == '1') ? 0x08 : 0;
             }
             if (pads[j].origsignal == PAD_D2)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                lastdata &= ~0x04;
                lastdata |= (pom2 == '1') ? 0x04 : 0;
             }
             if (pads[j].origsignal == PAD_D1)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                lastdata &= ~0x02;
                lastdata |= (pom2 == '1') ? 0x02 : 0;
             }
             if (pads[j].origsignal == PAD_D0)
             {
-               wprintf(L"%c", pom2);
+               printf("%c", pom2);
                lastdata &= ~0x01;
                lastdata |= (pom2 == '1') ? 0x01 : 0;
             }
          // End of if (pads[j].type == PAD_OUTPUT)
          }
 
-         wprintf(L" PC:%04x", GetRegVal(reg_pch) << 8 | GetRegVal(reg_pcl));
-         wprintf(L" IR:%04x", GetRegVal(reg_i) << 8 | GetRegVal(reg_r));
-         wprintf(L" SP:%04x", GetRegVal(reg_sph) << 8 | GetRegVal(reg_spl));
-         wprintf(L" WZ:%04x", GetRegVal(reg_w) << 8 | GetRegVal(reg_z));
-         wprintf(L" IX:%04x", GetRegVal(reg_ixh) << 8 | GetRegVal(reg_ixl));
-         wprintf(L" IY:%04x", GetRegVal(reg_iyh) << 8 | GetRegVal(reg_iyl));
-         wprintf(L" HL:%04x", GetRegVal(reg_h) << 8 | GetRegVal(reg_l));
-         wprintf(L" HL':%04x", GetRegVal(reg_h2) << 8 | GetRegVal(reg_l2));
-         wprintf(L" DE:%04x", GetRegVal(reg_d) << 8 | GetRegVal(reg_e));
-         wprintf(L" DE':%04x", GetRegVal(reg_d2) << 8 | GetRegVal(reg_e2));
-         wprintf(L" BC:%04x", GetRegVal(reg_b) << 8 | GetRegVal(reg_c));
-         wprintf(L" BC':%04x", GetRegVal(reg_b2) << 8 | GetRegVal(reg_c2));
-         wprintf(L" A:%02x", GetRegVal(reg_a));
-         wprintf(L" A':%02x", GetRegVal(reg_a2));
-         wprintf(L" F:%c", (GetRegVal(reg_f) & 0x80) ? L'S' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f) & 0x40) ? L'Z' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f) & 0x20) ? L'5' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f) & 0x10) ? L'H' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f) & 0x08) ? L'3' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f) & 0x04) ? L'V' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f) & 0x02) ? L'N' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f) & 0x01) ? L'C' : L'.');
-         wprintf(L" F':%c", (GetRegVal(reg_f2) & 0x80) ? L'S' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f2) & 0x40) ? L'Z' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f2) & 0x20) ? L'5' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f2) & 0x10) ? L'H' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f2) & 0x08) ? L'3' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f2) & 0x04) ? L'V' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f2) & 0x02) ? L'N' : L'.');
-         wprintf(L"%c", (GetRegVal(reg_f2) & 0x01) ? L'C' : L'.');
+         printf(" PC:%04x", GetRegVal(reg_pch) << 8 | GetRegVal(reg_pcl));
+         printf(" IR:%04x", GetRegVal(reg_i) << 8 | GetRegVal(reg_r));
+         printf(" SP:%04x", GetRegVal(reg_sph) << 8 | GetRegVal(reg_spl));
+         printf(" WZ:%04x", GetRegVal(reg_w) << 8 | GetRegVal(reg_z));
+         printf(" IX:%04x", GetRegVal(reg_ixh) << 8 | GetRegVal(reg_ixl));
+         printf(" IY:%04x", GetRegVal(reg_iyh) << 8 | GetRegVal(reg_iyl));
+         printf(" HL:%04x", GetRegVal(reg_h) << 8 | GetRegVal(reg_l));
+         printf(" HL':%04x", GetRegVal(reg_h2) << 8 | GetRegVal(reg_l2));
+         printf(" DE:%04x", GetRegVal(reg_d) << 8 | GetRegVal(reg_e));
+         printf(" DE':%04x", GetRegVal(reg_d2) << 8 | GetRegVal(reg_e2));
+         printf(" BC:%04x", GetRegVal(reg_b) << 8 | GetRegVal(reg_c));
+         printf(" BC':%04x", GetRegVal(reg_b2) << 8 | GetRegVal(reg_c2));
+         printf(" A:%02x", GetRegVal(reg_a));
+         printf(" A':%02x", GetRegVal(reg_a2));
+         printf(" F:%c", (GetRegVal(reg_f) & 0x80) ? L'S' : L'.');
+         printf("%c", (GetRegVal(reg_f) & 0x40) ? L'Z' : L'.');
+         printf("%c", (GetRegVal(reg_f) & 0x20) ? L'5' : L'.');
+         printf("%c", (GetRegVal(reg_f) & 0x10) ? L'H' : L'.');
+         printf("%c", (GetRegVal(reg_f) & 0x08) ? L'3' : L'.');
+         printf("%c", (GetRegVal(reg_f) & 0x04) ? L'V' : L'.');
+         printf("%c", (GetRegVal(reg_f) & 0x02) ? L'N' : L'.');
+         printf("%c", (GetRegVal(reg_f) & 0x01) ? L'C' : L'.');
+         printf(" F':%c", (GetRegVal(reg_f2) & 0x80) ? L'S' : L'.');
+         printf("%c", (GetRegVal(reg_f2) & 0x40) ? L'Z' : L'.');
+         printf("%c", (GetRegVal(reg_f2) & 0x20) ? L'5' : L'.');
+         printf("%c", (GetRegVal(reg_f2) & 0x10) ? L'H' : L'.');
+         printf("%c", (GetRegVal(reg_f2) & 0x08) ? L'3' : L'.');
+         printf("%c", (GetRegVal(reg_f2) & 0x04) ? L'V' : L'.');
+         printf("%c", (GetRegVal(reg_f2) & 0x02) ? L'N' : L'.');
+         printf("%c", (GetRegVal(reg_f2) & 0x01) ? L'C' : L'.');
 
-         wprintf(L" T:%c", (transistors[sig_t1].IsOn()) ? '1' : '.');
-         wprintf(L"%c", (transistors[sig_t2].IsOn()) ? '2' : '.');
-         wprintf(L"%c", (transistors[sig_t3].IsOn()) ? '3' : '.');
-         wprintf(L"%c", (transistors[sig_t4].IsOn()) ? '4' : '.');
-         wprintf(L"%c", (transistors[sig_t5].IsOn()) ? '5' : '.');
-         wprintf(L"%c", (transistors[sig_t6].IsOn()) ? '6' : '.');
+         printf(" T:%c", (transistors[sig_t1].IsOn()) ? '1' : '.');
+         printf("%c", (transistors[sig_t2].IsOn()) ? '2' : '.');
+         printf("%c", (transistors[sig_t3].IsOn()) ? '3' : '.');
+         printf("%c", (transistors[sig_t4].IsOn()) ? '4' : '.');
+         printf("%c", (transistors[sig_t5].IsOn()) ? '5' : '.');
+         printf("%c", (transistors[sig_t6].IsOn()) ? '6' : '.');
 
-         wprintf(L" M:%c", (transistors[sig_m1].IsOn()) ? '1' : '.');
-         wprintf(L"%c", (transistors[sig_m2].IsOn()) ? '2' : '.');
-         wprintf(L"%c", (transistors[sig_m3].IsOn()) ? '3' : '.');
-         wprintf(L"%c", (transistors[sig_m4].IsOn()) ? '4' : '.');
-         wprintf(L"%c", (transistors[sig_m5].IsOn()) ? '5' : '.');
+         printf(" M:%c", (transistors[sig_m1].IsOn()) ? '1' : '.');
+         printf("%c", (transistors[sig_m2].IsOn()) ? '2' : '.');
+         printf("%c", (transistors[sig_m3].IsOn()) ? '3' : '.');
+         printf("%c", (transistors[sig_m4].IsOn()) ? '4' : '.');
+         printf("%c", (transistors[sig_m5].IsOn()) ? '5' : '.');
 
-      // wprintf(L" T2:%c", (transistors[sig_trap2].IsOn()) ? 'X' : '.');
-      // wprintf(L" U:%c", (transistors[sig_trap2_up].IsOn()) ? 'X' : '.');
-      // wprintf(L" D:%c", (transistors[sig_trap2_down].IsOn()) ? 'X' : '.');
+      // printf(" T2:%c", (transistors[sig_trap2].IsOn()) ? 'X' : '.');
+      // printf(" U:%c", (transistors[sig_trap2_up].IsOn()) ? 'X' : '.');
+      // printf(" D:%c", (transistors[sig_trap2_down].IsOn()) ? 'X' : '.');
 
-/*       wprintf(L" X:%c", (transistors[sig_x].IsOn()) ? '#' : '.');
-         wprintf(L" L:%c", (transistors[sig_l1].IsOn()) ? '#' : '.');
-         wprintf(L"%c", (transistors[sig_l2].IsOn()) ? '#' : '.');
-         wprintf(L"%c", (transistors[sig_l3].IsOn()) ? '#' : '.');
-         wprintf(L" R:%c", (transistors[sig_r1].IsOn()) ? '#' : '.');
-         wprintf(L"%c", (transistors[sig_r2].IsOn()) ? '#' : '.');
-         wprintf(L"%c", (transistors[sig_r3].IsOn()) ? '#' : '.');*/
-      // wprintf(L" R1>>% 6.1f|% 6.1f|% 6.1f", transistors[sig_r1].gatecharge, transistors[sig_r1].draincharge, transistors[sig_r1].sourcecharge);
-      // wprintf(L" R2>>% 6.1f|% 6.1f|% 6.1f", transistors[sig_r2].gatecharge, transistors[sig_r2].draincharge, transistors[sig_r2].sourcecharge);
-      // wprintf(L" R3>>% 6.1f|% 6.1f|% 6.1f", transistors[sig_r3].gatecharge, transistors[sig_r3].draincharge, transistors[sig_r3].sourcecharge);
-      // wprintf(L" Rx>>% 5.2f|% 5.2f|% 5.2f", transistors[sig_r3].resist, transistors[sig_r3].resist, transistors[sig_r3].resist);
+/*       printf(" X:%c", (transistors[sig_x].IsOn()) ? '#' : '.');
+         printf(" L:%c", (transistors[sig_l1].IsOn()) ? '#' : '.');
+         printf("%c", (transistors[sig_l2].IsOn()) ? '#' : '.');
+         printf("%c", (transistors[sig_l3].IsOn()) ? '#' : '.');
+         printf(" R:%c", (transistors[sig_r1].IsOn()) ? '#' : '.');
+         printf("%c", (transistors[sig_r2].IsOn()) ? '#' : '.');
+         printf("%c", (transistors[sig_r3].IsOn()) ? '#' : '.');*/
+      // printf(" R1>>% 6.1f|% 6.1f|% 6.1f", transistors[sig_r1].gatecharge, transistors[sig_r1].draincharge, transistors[sig_r1].sourcecharge);
+      // printf(" R2>>% 6.1f|% 6.1f|% 6.1f", transistors[sig_r2].gatecharge, transistors[sig_r2].draincharge, transistors[sig_r2].sourcecharge);
+      // printf(" R3>>% 6.1f|% 6.1f|% 6.1f", transistors[sig_r3].gatecharge, transistors[sig_r3].draincharge, transistors[sig_r3].sourcecharge);
+      // printf(" Rx>>% 5.2f|% 5.2f|% 5.2f", transistors[sig_r3].resist, transistors[sig_r3].resist, transistors[sig_r3].resist);
 
          if (!pom_rd && !pom_mreq && transistors[sig_m1].IsOn())
-            wprintf(L" ***** OPCODE FETCH: %04x[%02x]", pomadr, memory[pomadr]);
+            printf(" ***** OPCODE FETCH: %04x[%02x]", pomadr, memory[pomadr]);
 
          if (!pom_mreq || !pom_iorq)
          {
@@ -2657,12 +2612,12 @@ int _tmain(int argc, _TCHAR* argv[])
                   if (!pom_mreq)
                   {
                      memory[lastadr] = lastdata;
-                     wprintf(L" MEMORY WRITE: %04x[%02x]", lastadr, lastdata);
+                     printf(" MEMORY WRITE: %04x[%02x]", lastadr, lastdata);
                   }
                   if (!pom_iorq)
                   {
                      ports[lastadr & 0xff] = lastdata;
-                     wprintf(L" I/O WRITE: %04x[%02x]", lastadr, lastdata);
+                     printf(" I/O WRITE: %04x[%02x]", lastadr, lastdata);
                      if (!(lastadr & 0xff))
                         justwasoutput = true;
                   }
@@ -2680,17 +2635,17 @@ int _tmain(int argc, _TCHAR* argv[])
                {
                   if (!pom_mreq && !transistors[sig_m1].IsOn())
                   {
-                     wprintf(L" MEMORY READ: %04x[%02x]", lastadr, memory[lastadr]);
+                     printf(" MEMORY READ: %04x[%02x]", lastadr, memory[lastadr]);
                   }
                   if (!pom_iorq)
                   {
-                     wprintf(L" I/O READ: %04x[%02x]", lastadr, memory[lastadr]);
+                     printf(" I/O READ: %04x[%02x]", lastadr, memory[lastadr]);
                   }
                }
             }
          }
 
-         wprintf(L"\n");
+         printf("\n");
 
          if (!pom_halt && !pom_rst)
             outcounter++;
@@ -2704,14 +2659,15 @@ int _tmain(int argc, _TCHAR* argv[])
    }
 
    duration = GetTickCount() - duration;
-   wprintf(L"---------------------\n");
-   wprintf(L"Duration: %dms\n", duration);
-   wprintf(L"Speed of simulation: %.2fHz\n", (double(totcycles) / 2.0) / double(duration) * 1000.0 / double(DIVISOR));
+   printf("---------------------\n");
+   printf("Duration: %ldms\n", duration);
+   printf("Speed of simulation: %.2fHz\n", (double(totcycles) / 2.0) / double(duration) * 1000.0 / double(DIVISOR));
 
    if (outfile)
       ::fclose(outfile);
+#ifdef DMB_THREAD
    delete threadList;
-   timeEndPeriod(1);
+#endif
 
    return 0;
 }
