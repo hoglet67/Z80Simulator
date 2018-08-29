@@ -360,7 +360,7 @@ void transistor::Simulate()
                transistors[sourceconnections[i].index].draincharge += chargetogo * sourceconnections[i].proportion;
          }
       }
-      else if ((source == SIG_GND))
+      else if (source == SIG_GND)
       {
          float chargetogo = pomchargetogo;
 
@@ -405,7 +405,7 @@ void transistor::Simulate()
    {
       if (IsOn())
       {
-         if ((drain == SIG_VCC))
+         if (drain == SIG_VCC)
          {
             float chargetogo = pomchargetogo;
             chargetogo *= gatecharge / area;
@@ -421,7 +421,7 @@ void transistor::Simulate()
                   transistors[sourceconnections[i].index].draincharge += chargetogo * sourceconnections[i].proportion;
             }
          }
-         else if ((source == SIG_GND))
+         else if (source == SIG_GND)
          {
             float chargetogo = pomchargetogo;
             chargetogo *= gatecharge / area;
@@ -880,7 +880,7 @@ int GetRegVal(unsigned int reg[])
 {
    int pomvalue = 0;
    for (int i = 7; i >= 0; i--)
-      pomvalue = pomvalue << 1 | transistors[reg[i]].IsOn() & 1;
+      pomvalue = (pomvalue << 1) | (transistors[reg[i]].IsOn() & 1);
    return pomvalue;
 }
 
