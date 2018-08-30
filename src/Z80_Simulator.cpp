@@ -32,6 +32,12 @@ using namespace std;
 // we need really big stack for recursive flood fill (need to be reimplemented)
 //#pragma comment(linker, "/STACK:536870912")
 
+#define FILL_STACK_SIZE 10000000
+
+uint16_t stack_x[FILL_STACK_SIZE];
+uint16_t stack_y[FILL_STACK_SIZE];
+uint16_t stack_layer[FILL_STACK_SIZE];
+
 #define ZeroMemory(p, sz) memset((p), 0, (sz))
 
 uint64_t GetTickCount()
@@ -601,70 +607,138 @@ bool SetPixelToBitmapData(png::image<png::rgba_pixel>& image, int x, int y, int 
 
 bool FillObject(int x, int y)
 {
-   if (pombuf[y * size_x + x] & type)
+   if (pombuf[y * size_x + x] & type || !GetPixelFromBitmapData(bd, x, y)) {
       return false;
-   if (!(GetPixelFromBitmapData(bd, x, y)))
-      return false;
-   pombuf[y * size_x + x] |= type;
-   shapesize++;
+   }
+   stack_x[0] = x;
+   stack_y[0] = y;
+   int stack_ptr = 1;
 
-   if (x)
-      if (!(pombuf[y * size_x + x - 1] & type))
-         FillObject(x - 1, y);
-   if (y)
-      if (!(pombuf[(y - 1) * size_x + x] & type))
-         FillObject(x, y - 1);
-   if (x < size_x - 1)
-      if (!(pombuf[y * size_x + x + 1] & type))
-         FillObject(x + 1, y);
-   if (y < size_y - 1)
-      if (!(pombuf[(y + 1) * size_x + x] & type))
-         FillObject(x, y + 1);
+   while (stack_ptr > 0) {
 
+      stack_ptr--;
+      x = stack_x[stack_ptr];
+      y = stack_y[stack_ptr];
+
+      pombuf[y * size_x + x] |= type;
+      shapesize++;
+
+      for (int i = 0; i < 4; i++) {
+         int nx;
+         int ny;
+         switch (i) {
+         case 0: nx = x - 1; ny = y    ; break;
+         case 1: nx = x    ; ny = y - 1; break;
+         case 2: nx = x + 1; ny = y    ; break;
+         case 3: nx = x    ; ny = y + 1; break;
+         }
+         if (nx >= 0 && nx < size_x && ny >= 0 && ny < size_y) {
+            if (!(pombuf[ny * size_x + nx] & type) && GetPixelFromBitmapData(bd, nx, ny)) {
+               if (stack_ptr < FILL_STACK_SIZE) {
+                  stack_x[stack_ptr] = nx;
+                  stack_y[stack_ptr] = ny;
+                  stack_ptr++;
+               } else {
+                  printf("Fill stack overflow in FillObject()\n");
+                  ::exit(1);
+               }
+            }
+         }
+      }
+   }
    return true;
 }
+
 
 bool FillStructure(int x, int y)
 {
-   if (pombuf[y * size_x + x] & type)
+   if ((pombuf[y * size_x + x] & type) || (pombuf[y * size_x + x] & type2) != type3) {
       return false;
-   if ((pombuf[y * size_x + x] & type2) != type3)
-      return false;
-   pombuf[y * size_x + x] |= type;
-   shapesize++;
+   }
+   stack_x[0] = x;
+   stack_y[0] = y;
+   int stack_ptr = 1;
 
-   if (x)
-      FillStructure(x - 1, y);
-   if (y)
-      FillStructure(x, y - 1);
-   if (x < size_x - 1)
-      FillStructure(x + 1, y);
-   if (y < size_y - 1)
-      FillStructure(x, y + 1);
+   while (stack_ptr > 0) {
 
+      stack_ptr--;
+      x = stack_x[stack_ptr];
+      y = stack_y[stack_ptr];
+
+      pombuf[y * size_x + x] |= type;
+      shapesize++;
+
+      for (int i = 0; i < 4; i++) {
+         int nx;
+         int ny;
+         switch (i) {
+         case 0: nx = x - 1; ny = y    ; break;
+         case 1: nx = x    ; ny = y - 1; break;
+         case 2: nx = x + 1; ny = y    ; break;
+         case 3: nx = x    ; ny = y + 1; break;
+         }
+         if (nx >= 0 && nx < size_x && ny >= 0 && ny < size_y) {
+            if (!(pombuf[ny * size_x + nx] & type) && (pombuf[ny * size_x + nx] & type2) == type3) {
+               if (stack_ptr < FILL_STACK_SIZE) {
+                  stack_x[stack_ptr] = nx;
+                  stack_y[stack_ptr] = ny;
+                  stack_ptr++;
+               } else {
+                  printf("Fill stack overflow in FillStructure()\n");
+                  ::exit(1);
+               }
+            }
+         }
+      }
+   }
    return true;
 }
 
+
 bool FillStructureCheck(int x, int y)
 {
-   if (pombuf[y * size_x + x] & type)
+   if ((pombuf[y * size_x + x] & type) || (pombuf[y * size_x + x] & type2) != type2) {
       return false;
-   if ((pombuf[y * size_x + x] & type2) != type2)
-      return false;
-   pombuf[y * size_x + x] |= type;
+   }
+   stack_x[0] = x;
+   stack_y[0] = y;
+   int stack_ptr = 1;
 
-   if ((pombuf[y * size_x + x] & type3))
-      objectfound = true;
+   while (stack_ptr > 0) {
 
-   if (x)
-      FillStructureCheck(x - 1, y);
-   if (y)
-      FillStructureCheck(x, y - 1);
-   if (x < size_x - 1)
-      FillStructureCheck(x + 1, y);
-   if (y < size_y - 1)
-      FillStructureCheck(x, y + 1);
+      stack_ptr--;
+      x = stack_x[stack_ptr];
+      y = stack_y[stack_ptr];
 
+      pombuf[y * size_x + x] |= type;
+
+      if ((pombuf[y * size_x + x] & type3)) {
+         objectfound = true;
+      }
+
+      for (int i = 0; i < 4; i++) {
+         int nx;
+         int ny;
+         switch (i) {
+         case 0: nx = x - 1; ny = y    ; break;
+         case 1: nx = x    ; ny = y - 1; break;
+         case 2: nx = x + 1; ny = y    ; break;
+         case 3: nx = x    ; ny = y + 1; break;
+         }
+         if (nx >= 0 && nx < size_x && ny >= 0 && ny < size_y) {
+            if (!(pombuf[ny * size_x + nx] & type) && (pombuf[ny * size_x + nx] & type2) == type2) {
+               if (stack_ptr < FILL_STACK_SIZE) {
+                  stack_x[stack_ptr] = nx;
+                  stack_y[stack_ptr] = ny;
+                  stack_ptr++;
+               } else {
+                  printf("Fill stack overflow in FillCheckStructure()\n");
+                  ::exit(1);
+               }
+            }
+         }
+      }
+   }
    return true;
 }
 
@@ -749,27 +823,40 @@ void CheckFile(char *firstpart, int ltype)
 
 
 // routes the signal thru all the layers - necessary for numbering the signals
-bool RouteSignal(int x, int y, int sig_num, int layer)
+void RouteSignal(int x, int y, int sig_num, int layer)
 {
-   switch (layer)
-   {
+   stack_x[0] = x;
+   stack_y[0] = y;
+   stack_layer[0] = layer;
+   int stack_ptr = 1;
+
+   while (stack_ptr > 0) {
+
+      stack_ptr--;
+      x = stack_x[stack_ptr];
+      y = stack_y[stack_ptr];
+      layer = stack_layer[stack_ptr];
+
+      switch (layer) {
       case METAL:
-         if (!(pombuf[y * size_x + x] & METAL))
-            return false;
+         if (!(pombuf[y * size_x + x] & METAL)) {
+            continue;
+         }
          break;
       case POLYSILICON:
-         if (!(pombuf[y * size_x + x] & POLYSILICON))
-            return false;
+         if (!(pombuf[y * size_x + x] & POLYSILICON)) {
+            continue;
+         }
          break;
       case DIFFUSION:
-         if (!(pombuf[y * size_x + x] & REAL_DIFFUSION))
-            return false;
+         if (!(pombuf[y * size_x + x] & REAL_DIFFUSION)) {
+            continue;
+         }
          break;
-   }
+      }
 
-   int pomsig = 0;
-   switch (layer)
-   {
+      int pomsig = 0;
+      switch (layer) {
       case METAL:
          pomsig = signals_metal[y * size_x + x];
          break;
@@ -779,17 +866,17 @@ bool RouteSignal(int x, int y, int sig_num, int layer)
       case DIFFUSION:
          pomsig = signals_diff[y * size_x + x];
          break;
-   }
-   if (pomsig)
-   {
-      if (pomsig != sig_num)
-         if (verbous)
-            printf("Signal mismatch %d vs %d at %d, %d\n", sig_num, pomsig, x, y);
-      return false;
-   }
+      }
+      if (pomsig) {
+         if (pomsig != sig_num) {
+            if (verbous) {
+               printf("Signal mismatch %d vs %d at %d, %d\n", sig_num, pomsig, x, y);
+            }
+         }
+         continue;
+      }
 
-   switch (layer)
-   {
+      switch (layer) {
       case METAL:
          signals_metal[y * size_x + x] = sig_num;
          break;
@@ -799,40 +886,62 @@ bool RouteSignal(int x, int y, int sig_num, int layer)
       case DIFFUSION:
          signals_diff[y * size_x + x] = sig_num;
          break;
+      }
+
+      for (int i = 0; i < 4; i++) {
+         int nx;
+         int ny;
+         switch (i) {
+         case 0: nx = x - 1; ny = y    ; break;
+         case 1: nx = x    ; ny = y - 1; break;
+         case 2: nx = x + 1; ny = y    ; break;
+         case 3: nx = x    ; ny = y + 1; break;
+         }
+         if (nx >= 0 && nx < size_x && ny >= 0 && ny < size_y) {
+            if (stack_ptr < FILL_STACK_SIZE) {
+               stack_x[stack_ptr] = nx;
+               stack_y[stack_ptr] = ny;
+               stack_layer[stack_ptr] = layer;
+               stack_ptr++;
+            } else {
+               printf("Fill stack overflow in RouteSignal()\n");
+               ::exit(1);
+            }
+         }
+      }
+
+      if (stack_ptr < FILL_STACK_SIZE) {
+         // These don't actually take effect until stack_ptr is incremented
+         stack_x[stack_ptr] = x;
+         stack_y[stack_ptr] = y;
+         switch (layer) {
+         case METAL:
+            if ((pombuf[y * size_x + x] & VIAS_TO_POLYSILICON)) {
+               stack_layer[stack_ptr++] = POLYSILICON;
+            } else if ((pombuf[y * size_x + x] & VIAS_TO_DIFFUSION)) {
+               stack_layer[stack_ptr++] = DIFFUSION;
+            }
+            break;
+         case POLYSILICON:
+            if ((pombuf[y * size_x + x] & VIAS_TO_POLYSILICON)) {
+               stack_layer[stack_ptr++] = METAL;
+            } else if ((pombuf[y * size_x + x] & BURIED_CONTACT)) {
+               stack_layer[stack_ptr++] = DIFFUSION;
+            }
+            break;
+         case DIFFUSION:
+            if ((pombuf[y * size_x + x] & VIAS_TO_DIFFUSION)) {
+               stack_layer[stack_ptr++] = METAL;
+            } else if ((pombuf[y * size_x + x] & BURIED_CONTACT)) {
+               stack_layer[stack_ptr++] = POLYSILICON;
+            }
+            break;
+         }
+      } else {
+         printf("Fill stack overflow in RouteSignal()\n");
+         ::exit(1);
+      }
    }
-
-   if (x)
-      RouteSignal(x - 1, y, sig_num, layer);
-   if (y)
-      RouteSignal(x, y - 1, sig_num, layer);
-   if (x < size_x - 1)
-      RouteSignal(x + 1, y, sig_num, layer);
-   if (y < size_y - 1)
-      RouteSignal(x, y + 1, sig_num, layer);
-
-   switch (layer)
-   {
-      case METAL:
-         if ((pombuf[y * size_x + x] & VIAS_TO_POLYSILICON))
-            RouteSignal(x, y, sig_num, POLYSILICON);
-         else if ((pombuf[y * size_x + x] & VIAS_TO_DIFFUSION))
-            RouteSignal(x, y, sig_num, DIFFUSION);
-         break;
-      case POLYSILICON:
-         if ((pombuf[y * size_x + x] & VIAS_TO_POLYSILICON))
-            RouteSignal(x, y, sig_num, METAL);
-         else if ((pombuf[y * size_x + x] & BURIED_CONTACT))
-            RouteSignal(x, y, sig_num, DIFFUSION);
-         break;
-      case DIFFUSION:
-         if ((pombuf[y * size_x + x] & VIAS_TO_DIFFUSION))
-            RouteSignal(x, y, sig_num, METAL);
-         else if ((pombuf[y * size_x + x] & BURIED_CONTACT))
-            RouteSignal(x, y, sig_num, POLYSILICON);
-         break;
-   }
-
-   return true;
 }
 
 int gate, source, drain;
@@ -1116,7 +1225,7 @@ int main(int argc, char *argv[])
                      filelen = 65536 - pomaddress;
                   }
                   if (::fread(&memory[pomaddress], 1, filelen, memfile) <= 0) {
-                     printf("Couldn't read %s as memfile.\n", argv[i-1]);                     
+                     printf("Couldn't read %s as memfile.\n", argv[i-1]);
                   }
                   ::fclose(memfile);
                }
