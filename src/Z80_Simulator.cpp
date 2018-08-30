@@ -148,20 +148,20 @@ int nextsignal;
 uint8_t memory[65536];
 uint8_t ports[256];
 
-// connection to transistor remembers index of connected transistor and its terminal
+// Connection to transistor remembers index of connected transistor and its terminal
 // proportion is the proportion of that transisor are to the area of all transistors connected
 // to the respective signal - it is here for optimalisation purposes
 
-class connection
+class Connection
 {
 public:
-   connection();
+   Connection();
    int terminal;
    int index;
    float proportion;
 };
 
-connection::connection()
+Connection::Connection()
 {
    terminal = index = 0;
    proportion = 0.0f;
@@ -171,38 +171,38 @@ connection::connection()
 #define SIG_PWR 2
 #define SIG_FLOATING 3
 
-// signal keeps the vector of connections (i.e. all transistors connected to the respective signal)
+// Signal keeps the vector of Connections (i.e. all transistors connected to the respective signal)
 // Homogenize() averages the charge proportionally by transistor area
 // ignore means that this signal need not to be homogenized - a try for optimalization
 // but it works only for Vcc and GND
 
-class signal
+class Signal
 {
 public:
-   signal();
+   Signal();
    void Homogenize();
-   vector<connection> connections;
+   vector<Connection> connections;
    float signalarea;
    bool ignore;
 };
 
-signal::signal()
+Signal::Signal()
 {
    signalarea = 0.0f;
    ignore = false;
 }
 
-vector<signal> signals;
+vector<Signal> signals;
 
 #define PAD_INPUT 1
 #define PAD_OUTPUT 2
 #define PAD_BIDIRECTIONAL 3
 
 // PADs - used for communication with the CPU see its use in simulation below
-class pad
+class Pad
 {
 public:
-   pad();
+   Pad();
    void SetInputSignal(int signal);
    float ReadOutput();
    int ReadOutputStatus();
@@ -210,24 +210,24 @@ public:
    int type;
    int x, y;
    int origsignal;
-   vector<connection> connections;
+   vector<Connection> connections;
 };
 
-pad::pad()
+Pad::Pad()
 {
    type = 0;
    x = y = 0;
    origsignal = 0;
 }
 
-vector<pad> pads;
+vector<Pad> pads;
 
 // transistor - keeps connections to other transistors
 // Simulate() - moves charge between source and drain
-class transistor
+class Transistor
 {
 public:
-   transistor();
+   Transistor();
    bool IsOn();
    int IsOnAnalog();
    void Simulate();
@@ -243,14 +243,14 @@ public:
    float resist;
    float gatecharge, sourcecharge, draincharge;
 
-   vector<connection> gateconnections;
-   vector<connection> sourceconnections;
-   vector<connection> drainconnections;
+   vector<Connection> gateconnections;
+   vector<Connection> sourceconnections;
+   vector<Connection> drainconnections;
    float gateneighborhood, sourceneighborhood, drainneighborhood;
    float chargetobeon, pomchargetogo;
 };
 
-transistor::transistor()
+Transistor::Transistor()
 {
    x = y = 0;
    gate = source = drain = 0;
@@ -263,20 +263,20 @@ transistor::transistor()
    chargetobeon = pomchargetogo = 0.0f;
 }
 
-inline bool transistor::IsOn()
+inline bool Transistor::IsOn()
 {
    if (gatecharge > 0.0f)
       return true;
    return false;
 }
 
-int transistor::IsOnAnalog()
+int Transistor::IsOnAnalog()
 {
    return int(50.0f * gatecharge / area) + 50;
 }
 
 // Gets the type of the transistor - originally for optimalization purposes now more for statistical purposes
-inline int transistor::Valuate()
+inline int Transistor::Valuate()
 {
    // 1 depletion pullup
    // 2 enhancement pullup
@@ -292,7 +292,7 @@ inline int transistor::Valuate()
    return 4;
 }
 
-vector<transistor> transistors;
+vector<Transistor> transistors;
 
 #ifdef DMB_THREAD
 DWORD WINAPI ThreadSimulateTransistors(LPVOID thread_id)
@@ -311,7 +311,7 @@ DWORD WINAPI ThreadSimulateTransistors(LPVOID thread_id)
 HANDLE *threadList = NULL;
 #endif
 
-void signal::Homogenize()
+void Signal::Homogenize()
 {
    float pomcharge = 0.0f;
    for (unsigned int i = 0; i < connections.size(); i++)
@@ -335,7 +335,7 @@ void signal::Homogenize()
    }
 }
 
-void transistor::Simulate()
+void Transistor::Simulate()
 {
    if (gate == SIG_GND)
       gatecharge = 0.0f;
@@ -467,7 +467,7 @@ void transistor::Simulate()
    }
 }
 
-void transistor::Normalize()
+void Transistor::Normalize()
 {
    if (gatecharge < -area)
       gatecharge = -area;
@@ -483,7 +483,7 @@ void transistor::Normalize()
       draincharge = area;
 }
 
-int pad::ReadInputStatus()
+int Pad::ReadInputStatus()
 {
    int pomvalue = SIG_FLOATING;
 
@@ -503,7 +503,7 @@ int pad::ReadInputStatus()
    return pomvalue;
 }
 
-void pad::SetInputSignal(int signal)
+void Pad::SetInputSignal(int signal)
 {
    for (unsigned int i = 0; i < connections.size(); i++)
    {
@@ -528,7 +528,7 @@ void pad::SetInputSignal(int signal)
    }
 }
 
-float pad::ReadOutput()
+float Pad::ReadOutput()
 {
    float shouldbe = 0.0f, reallywas = 0.0f;
    for (unsigned int i = 0; i < connections.size(); i++)
@@ -550,7 +550,7 @@ float pad::ReadOutput()
 
 // does not work correctly
 // i.e. it cannot recoginze floating status
-int pad::ReadOutputStatus()
+int Pad::ReadOutputStatus()
 {
    float pom = ReadOutput();
    if (pom < -0.05f)
@@ -983,7 +983,7 @@ void CheckTransistor(int x, int y)
 
 void SetupPad(int x, int y, int signalnum, int padtype)
 {
-   pad tmppad;
+   Pad tmppad;
 
    tmppad.x = x;
    tmppad.y = y;
@@ -1277,7 +1277,7 @@ int main(int argc, char *argv[])
 
    // Finds all pads and sets its type
 
-   pad tmppad;
+   Pad tmppad;
 
    SetupPad(4477, 4777, PAD_CLK, PAD_INPUT);
    SetupPad(200, 500, PAD__RESET, PAD_INPUT);
@@ -1475,7 +1475,7 @@ int main(int argc, char *argv[])
                   printf("Diode / resistor at %d, %d.\n", x, y);
                diodes++;
             }
-            transistor pomtran;
+            Transistor pomtran;
             pomtran.x = x;
             pomtran.y = y;
             pomtran.area = (float) shapesize;
@@ -1517,7 +1517,7 @@ int main(int argc, char *argv[])
    {
       for (unsigned int j = 0; j < transistors.size(); j++)
       {
-         connection pomcon;
+         Connection pomcon;
          pomcon.index = j;
          if (transistors[i].gate > SIG_VCC)
          {
@@ -1596,7 +1596,7 @@ int main(int argc, char *argv[])
    {
       for (unsigned int j = 0; j < transistors.size(); j++)
       {
-         connection pomcon;
+         Connection pomcon;
          pomcon.index = j;
          if (pads[i].origsignal > SIG_VCC)
          {
@@ -1622,13 +1622,13 @@ int main(int argc, char *argv[])
    // builds the list of signals
    for (int i = 0; i < nextsignal; i++)
    {
-      signal pomsignal;
+      Signal pomsignal;
       if (i == SIG_VCC || i == SIG_GND)
          pomsignal.ignore = true;
       signals.push_back(pomsignal);
       for (unsigned int j = 0; j < transistors.size(); j++)
       {
-         connection pomcon;
+         Connection pomcon;
          pomcon.index = j;
          if (i == transistors[j].gate)
          {
