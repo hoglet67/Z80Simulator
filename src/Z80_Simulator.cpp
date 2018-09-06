@@ -1888,7 +1888,7 @@ int main(int argc, char *argv[])
    if (verbous)
    {
       printf("---------------------\n");
-      printf("Duration: %"PRId64"ms\n\n", duration);
+      printf("Duration: %" PRId64 "ms\n\n", duration);
    }
    duration = GetTickCount();
 
@@ -2769,7 +2769,7 @@ int main(int argc, char *argv[])
 
    duration = GetTickCount() - duration;
    printf("---------------------\n");
-   printf("Duration: %"PRId64"ms\n", duration);
+   printf("Duration: %" PRId64 "ms\n", duration);
    printf("Speed of simulation: %.2fHz\n", (double(totcycles) / 2.0) / double(duration) * 1000.0 / double(DIVISOR));
 
    if (outfile)
