@@ -4,3 +4,4 @@ Z80_Simulator
 Z80_metal_VCC_GND.png
 Z80_vias_VCC_GND.png
 not_in_git/
+*.js
