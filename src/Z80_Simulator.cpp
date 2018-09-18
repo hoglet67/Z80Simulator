@@ -1017,24 +1017,44 @@ int FindTransistor(unsigned int x, unsigned int y)
 
 int FindSignal(int i)
 {
-   int sig;
+   int sig = -1;
    Transistor t = transistors[i];
    if (t.drain == SIG_GND || t.drain == SIG_VCC) {
       sig = t.source;
-      printf("%d: using source because drain is fixed at %d\n", i, (t.drain == SIG_VCC ? 1 : 0));
+      printf("t%d: using source because drain is fixed at %d\n", i, (t.drain == SIG_VCC ? 1 : 0));
    } else if (t.source == SIG_GND || t.source == SIG_VCC) {
       sig = t.drain;
-      printf("%d: using drain because source is fixed at %d\n", i, (t.source == SIG_VCC ? 1 : 0));
-   } else if (t.sourceconnections.size() > t.drainconnections.size()) {
-      sig = t.source;
-      printf("%d: using source because (s:%d > d:%d)\n", i, (int) t.sourceconnections.size(), (int) t.drainconnections.size());
-   } else {
+      printf("t%d: using drain because source is fixed at %d\n", i, (t.source == SIG_VCC ? 1 : 0));
+   }
+   if (sig < 0) {
+      for (int j = 0; j < t.drainconnections.size(); j++) {
+         int x = t.drainconnections[j].index;
+         printf("t%d.drain connects to t%d\n", i, x);
+         Transistor t2 = transistors[x];
+         if (t2.source == t2.gate && t2.source == t.drain && t2.drain == SIG_VCC) {
+            sig = t.drain;
+            printf("t%d: using drain because net connects to pullup t%d\n", i, x);
+            break;
+         }
+      }
+   }
+   if (sig < 0) {
+      for (int j = 0; j < t.sourceconnections.size(); j++) {
+         int x = t.sourceconnections[j].index;
+         printf("t%d.source connects to t%d\n", i, x);
+         Transistor t2 = transistors[x];
+         if (t2.source == t2.gate && t2.source == t.source && t2.drain == SIG_VCC) {
+            sig = t.source;
+            printf("t%d: using source because net connects to pullup t%d\n", i, x);
+            break;
+         }
+      }
+   }
+   if (sig < 0 || sig == SIG_GND || sig == SIG_VCC) {
+      printf("Failed to find output of transistor %d, defaulting to the drain\n", i);
       sig = t.drain;
-      printf("%d: using drain because (s:%d <= d:%d)\n", i, (int) t.sourceconnections.size(), (int) t.drainconnections.size());
    }
-   if (sig == SIG_GND || sig == SIG_VCC) {
-      printf("Failed to find output of transistor %d\n", i);
-   }
+   printf("t%d: Using signal %d\n", i, sig);
    return sig;
 }
 
@@ -2293,47 +2313,47 @@ int main(int argc, char *argv[])
 
 
    FILE* nodefile = ::fopen("nodenames.js", "wb");
-   ::fputs("var nodenames ={", nodefile);
+   ::fputs("var nodenames ={\n", nodefile);
    ::fprintf(nodefile, "vss: %d,\n",SIG_GND);
    ::fprintf(nodefile, "vcc: %d,\n",SIG_VCC);
-   ::fprintf(nodefile, "clk: %d\n",PAD_CLK);
-   ::fprintf(nodefile, "a0: %d\n",PAD_A0);
-   ::fprintf(nodefile, "a1: %d\n",PAD_A1);
-   ::fprintf(nodefile, "a2: %d\n",PAD_A2);
-   ::fprintf(nodefile, "a3: %d\n",PAD_A3);
-   ::fprintf(nodefile, "a4: %d\n",PAD_A4);
-   ::fprintf(nodefile, "a5: %d\n",PAD_A5);
-   ::fprintf(nodefile, "a6: %d\n",PAD_A6);
-   ::fprintf(nodefile, "a7: %d\n",PAD_A7);
-   ::fprintf(nodefile, "a8: %d\n",PAD_A8);
-   ::fprintf(nodefile, "a9: %d\n",PAD_A9);
-   ::fprintf(nodefile, "a10: %d\n",PAD_A10);
-   ::fprintf(nodefile, "a11: %d\n",PAD_A11);
-   ::fprintf(nodefile, "a12: %d\n",PAD_A12);
-   ::fprintf(nodefile, "a13: %d\n",PAD_A13);
-   ::fprintf(nodefile, "a14: %d\n",PAD_A14);
-   ::fprintf(nodefile, "a15: %d\n",PAD_A15);
-   ::fprintf(nodefile, "_reset: %d\n",PAD__RESET);
-   ::fprintf(nodefile, "_wait: %d\n",PAD__WAIT);
-   ::fprintf(nodefile, "_int: %d\n",PAD__INT);
-   ::fprintf(nodefile, "_nmi: %d\n",PAD__NMI);
-   ::fprintf(nodefile, "_busrq: %d\n",PAD__BUSRQ);
-   ::fprintf(nodefile, "_m1: %d\n",PAD__M1);
-   ::fprintf(nodefile, "_rd: %d\n",PAD__RD);
-   ::fprintf(nodefile, "_wr: %d\n",PAD__WR);
-   ::fprintf(nodefile, "_mreq: %d\n",PAD__MREQ);
-   ::fprintf(nodefile, "_iorq: %d\n",PAD__IORQ);
-   ::fprintf(nodefile, "_rfsh: %d\n",PAD__RFSH);
-   ::fprintf(nodefile, "d0: %d\n",PAD_D0);
-   ::fprintf(nodefile, "d1: %d\n",PAD_D1);
-   ::fprintf(nodefile, "d2: %d\n",PAD_D2);
-   ::fprintf(nodefile, "d3: %d\n",PAD_D3);
-   ::fprintf(nodefile, "d4: %d\n",PAD_D4);
-   ::fprintf(nodefile, "d5: %d\n",PAD_D5);
-   ::fprintf(nodefile, "d6: %d\n",PAD_D6);
-   ::fprintf(nodefile, "d7: %d\n",PAD_D7);
-   ::fprintf(nodefile, "_halt: %d\n",PAD__HALT);
-   ::fprintf(nodefile, "_busak: %d\n",PAD__BUSAK);
+   ::fprintf(nodefile, "clk: %d,\n",PAD_CLK);
+   ::fprintf(nodefile, "a0: %d,\n",PAD_A0);
+   ::fprintf(nodefile, "a1: %d,\n",PAD_A1);
+   ::fprintf(nodefile, "a2: %d,\n",PAD_A2);
+   ::fprintf(nodefile, "a3: %d,\n",PAD_A3);
+   ::fprintf(nodefile, "a4: %d,\n",PAD_A4);
+   ::fprintf(nodefile, "a5: %d,\n",PAD_A5);
+   ::fprintf(nodefile, "a6: %d,\n",PAD_A6);
+   ::fprintf(nodefile, "a7: %d,\n",PAD_A7);
+   ::fprintf(nodefile, "a8: %d,\n",PAD_A8);
+   ::fprintf(nodefile, "a9: %d,\n",PAD_A9);
+   ::fprintf(nodefile, "a10: %d,\n",PAD_A10);
+   ::fprintf(nodefile, "a11: %d,\n",PAD_A11);
+   ::fprintf(nodefile, "a12: %d,\n",PAD_A12);
+   ::fprintf(nodefile, "a13: %d,\n",PAD_A13);
+   ::fprintf(nodefile, "a14: %d,\n",PAD_A14);
+   ::fprintf(nodefile, "a15: %d,\n",PAD_A15);
+   ::fprintf(nodefile, "_reset: %d,\n",PAD__RESET);
+   ::fprintf(nodefile, "_wait: %d,\n",PAD__WAIT);
+   ::fprintf(nodefile, "_int: %d,\n",PAD__INT);
+   ::fprintf(nodefile, "_nmi: %d,\n",PAD__NMI);
+   ::fprintf(nodefile, "_busrq: %d,\n",PAD__BUSRQ);
+   ::fprintf(nodefile, "_m1: %d,\n",PAD__M1);
+   ::fprintf(nodefile, "_rd: %d,\n",PAD__RD);
+   ::fprintf(nodefile, "_wr: %d,\n",PAD__WR);
+   ::fprintf(nodefile, "_mreq: %d,\n",PAD__MREQ);
+   ::fprintf(nodefile, "_iorq: %d,\n",PAD__IORQ);
+   ::fprintf(nodefile, "_rfsh: %d,\n",PAD__RFSH);
+   ::fprintf(nodefile, "d0: %d,\n",PAD_D0);
+   ::fprintf(nodefile, "d1: %d,\n",PAD_D1);
+   ::fprintf(nodefile, "d2: %d,\n",PAD_D2);
+   ::fprintf(nodefile, "d3: %d,\n",PAD_D3);
+   ::fprintf(nodefile, "d4: %d,\n",PAD_D4);
+   ::fprintf(nodefile, "d5: %d,\n",PAD_D5);
+   ::fprintf(nodefile, "d6: %d,\n",PAD_D6);
+   ::fprintf(nodefile, "d7: %d,\n",PAD_D7);
+   ::fprintf(nodefile, "_halt: %d,\n",PAD__HALT);
+   ::fprintf(nodefile, "_busak: %d,\n",PAD__BUSAK);
 
    ::fprintf(nodefile, "t1: %d,\n", FindSignal(sig_t1));
    ::fprintf(nodefile, "t2: %d,\n", FindSignal(sig_t2));
@@ -2348,34 +2368,34 @@ int main(int argc, char *argv[])
    ::fprintf(nodefile, "m5: %d,\n", FindSignal(sig_m5));
    ::fprintf(nodefile, "m6: %d,\n", FindSignal(sig_m6));
    for (int i = 0; i < 8; i++) {
-      ::fprintf(nodefile, "reg_a%d: %d\n",   i, FindSignal(reg_a[i]));
-      ::fprintf(nodefile, "reg_f%d: %d\n",   i, FindSignal(reg_f[i]));
-      ::fprintf(nodefile, "reg_b%d: %d\n",   i, FindSignal(reg_b[i]));
-      ::fprintf(nodefile, "reg_c%d: %d\n",   i, FindSignal(reg_c[i]));
-      ::fprintf(nodefile, "reg_d%d: %d\n",   i, FindSignal(reg_d[i]));
-      ::fprintf(nodefile, "reg_e%d: %d\n",   i, FindSignal(reg_e[i]));
-      ::fprintf(nodefile, "reg_h%d: %d\n",   i, FindSignal(reg_h[i]));
-      ::fprintf(nodefile, "reg_l%d: %d\n",   i, FindSignal(reg_l[i]));
-      ::fprintf(nodefile, "reg_w%d: %d\n",   i, FindSignal(reg_w[i]));
-      ::fprintf(nodefile, "reg_z%d: %d\n",   i, FindSignal(reg_z[i]));
-      ::fprintf(nodefile, "reg_pch%d: %d\n", i, FindSignal(reg_pch[i]));
-      ::fprintf(nodefile, "reg_pcl%d: %d\n", i, FindSignal(reg_pcl[i]));
-      ::fprintf(nodefile, "reg_sph%d: %d\n", i, FindSignal(reg_sph[i]));
-      ::fprintf(nodefile, "reg_spl%d: %d\n", i, FindSignal(reg_spl[i]));
-      ::fprintf(nodefile, "reg_ixh%d: %d\n", i, FindSignal(reg_ixh[i]));
-      ::fprintf(nodefile, "reg_ixl%d: %d\n", i, FindSignal(reg_ixl[i]));
-      ::fprintf(nodefile, "reg_iyh%d: %d\n", i, FindSignal(reg_iyh[i]));
-      ::fprintf(nodefile, "reg_iyl%d: %d\n", i, FindSignal(reg_iyl[i]));
-      ::fprintf(nodefile, "reg_i%d: %d\n",   i, FindSignal(reg_i[i]));
-      ::fprintf(nodefile, "reg_r%d: %d\n",   i, FindSignal(reg_r[i]));
-      ::fprintf(nodefile, "reg_aa%d: %d\n",  i, FindSignal(reg_a2[i]));
-      ::fprintf(nodefile, "reg_ff%d: %d\n",  i, FindSignal(reg_f2[i]));
-      ::fprintf(nodefile, "reg_bb%d: %d\n",  i, FindSignal(reg_b2[i]));
-      ::fprintf(nodefile, "reg_cc%d: %d\n",  i, FindSignal(reg_c2[i]));
-      ::fprintf(nodefile, "reg_dd%d: %d\n",  i, FindSignal(reg_d2[i]));
-      ::fprintf(nodefile, "reg_ee%d: %d\n",  i, FindSignal(reg_e2[i]));
-      ::fprintf(nodefile, "reg_hh%d: %d\n",  i, FindSignal(reg_h2[i]));
-      ::fprintf(nodefile, "reg_ll%d: %d\n",  i, FindSignal(reg_l2[i]));
+      ::fprintf(nodefile, "reg_a%d: %d,\n",   i, FindSignal(reg_a[i]));
+      ::fprintf(nodefile, "reg_f%d: %d,\n",   i, FindSignal(reg_f[i]));
+      ::fprintf(nodefile, "reg_b%d: %d,\n",   i, FindSignal(reg_b[i]));
+      ::fprintf(nodefile, "reg_c%d: %d,\n",   i, FindSignal(reg_c[i]));
+      ::fprintf(nodefile, "reg_d%d: %d,\n",   i, FindSignal(reg_d[i]));
+      ::fprintf(nodefile, "reg_e%d: %d,\n",   i, FindSignal(reg_e[i]));
+      ::fprintf(nodefile, "reg_h%d: %d,\n",   i, FindSignal(reg_h[i]));
+      ::fprintf(nodefile, "reg_l%d: %d,\n",   i, FindSignal(reg_l[i]));
+      ::fprintf(nodefile, "reg_w%d: %d,\n",   i, FindSignal(reg_w[i]));
+      ::fprintf(nodefile, "reg_z%d: %d,\n",   i, FindSignal(reg_z[i]));
+      ::fprintf(nodefile, "reg_pch%d: %d,\n", i, FindSignal(reg_pch[i]));
+      ::fprintf(nodefile, "reg_pcl%d: %d,\n", i, FindSignal(reg_pcl[i]));
+      ::fprintf(nodefile, "reg_sph%d: %d,\n", i, FindSignal(reg_sph[i]));
+      ::fprintf(nodefile, "reg_spl%d: %d,\n", i, FindSignal(reg_spl[i]));
+      ::fprintf(nodefile, "reg_ixh%d: %d,\n", i, FindSignal(reg_ixh[i]));
+      ::fprintf(nodefile, "reg_ixl%d: %d,\n", i, FindSignal(reg_ixl[i]));
+      ::fprintf(nodefile, "reg_iyh%d: %d,\n", i, FindSignal(reg_iyh[i]));
+      ::fprintf(nodefile, "reg_iyl%d: %d,\n", i, FindSignal(reg_iyl[i]));
+      ::fprintf(nodefile, "reg_i%d: %d,\n",   i, FindSignal(reg_i[i]));
+      ::fprintf(nodefile, "reg_r%d: %d,\n",   i, FindSignal(reg_r[i]));
+      ::fprintf(nodefile, "reg_aa%d: %d,\n",  i, FindSignal(reg_a2[i]));
+      ::fprintf(nodefile, "reg_ff%d: %d,\n",  i, FindSignal(reg_f2[i]));
+      ::fprintf(nodefile, "reg_bb%d: %d,\n",  i, FindSignal(reg_b2[i]));
+      ::fprintf(nodefile, "reg_cc%d: %d,\n",  i, FindSignal(reg_c2[i]));
+      ::fprintf(nodefile, "reg_dd%d: %d,\n",  i, FindSignal(reg_d2[i]));
+      ::fprintf(nodefile, "reg_ee%d: %d,\n",  i, FindSignal(reg_e2[i]));
+      ::fprintf(nodefile, "reg_hh%d: %d,\n",  i, FindSignal(reg_h2[i]));
+      ::fprintf(nodefile, "reg_ll%d: %d,\n",  i, FindSignal(reg_l2[i]));
    }
    ::fputs("}\n", nodefile);
    ::fclose(nodefile);
