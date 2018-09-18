@@ -1615,7 +1615,7 @@ int main(int argc, char *argv[])
                   pulldowns++;
                if (drain == SIG_VCC)
                {
-                  if (source == gate)
+                  if (gate == source)
                      pullups_dep++;
                   else
                      pullups_enh++;
@@ -2279,10 +2279,48 @@ int main(int argc, char *argv[])
    ::fputs("var transdefs = [\n", trfile);
    for (unsigned int i = 0; i < transistors.size(); i++)
    {
+      int weak = 0;
       // ['t1',1646,13,663,[560,721,2656,2730],[415,415,11,5,4566],false],
-      ::fprintf(trfile, "['t%d',%d,%d,%d,", i, transistors[i].gate, transistors[i].source, transistors[i].drain);
-      ::fprintf(trfile, "[%d,%d,%d,%d],", transistors[i].x, transistors[i].y, 1, 1);
-      ::fprintf(trfile, "[%d,%d,%d,%d,%d],false,],\n", 1, 1, 1, 1, (int) transistors[i].area);
+      Transistor t = transistors[i];
+      // Omit transistors that are pullups
+      if (t.source != t.gate || t.drain != SIG_VCC) {
+         if (t.drain == SIG_VCC && t.gate == SIG_VCC) {
+            printf("Warning: t%d is a enhancement pullup (g=%d, s=%d, d=%d) - marking as weak\n", i, t.gate, t.source, t.drain);
+            weak = 1;
+         } else {
+            if (t.source == SIG_GND && t.gate == SIG_GND) {
+               printf("Warning: t%d is a protection diode (g=%d, s=%d, d=%d) - excluding\n", i, t.gate, t.source, t.drain);
+               continue;
+            }
+            if (t.source == 0) {
+               printf("Warning: t%d has disconnected source (area = %d) - excluding\n", i, (int) t.area);
+               continue;
+            }
+            if (t.drain == 0) {
+               printf("Warning: t%d has disconnected drain (area = %d) - excluding\n", i, (int) t.area);
+               continue;
+            }
+            if (t.gate == 0) {
+               printf("Warning: t%d has disconnected gate (area = %d) - excluding\n", i, (int) t.area);
+               continue;
+            }
+            if (t.source == t.gate || t.source == t.drain || t.gate == t.drain) {
+               printf("Warning: t%d has unusual connections (g=%d, s=%d, d=%d)\n", i, t.gate, t.source, t.drain);
+            }
+         }
+         int gate = t.gate;
+         if (t.depletion) {
+            printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? forcing gate to VCC in netlist\n", i, t.gate, t.source, t.drain);
+            gate = SIG_VCC;
+         }
+         ::fprintf(trfile, "['t%d',%d,%d,%d,", i, gate, t.source, t.drain);
+         ::fprintf(trfile, "[%d,%d,%d,%d],", t.x, t.y, 1, 1);
+         ::fprintf(trfile, "[%d,%d,%d,%d,%d],%s,],\n", 1, 1, 1, 1, (int) t.area, (weak ? "true" : "false"));
+      } else {
+         if (!t.depletion) {
+            printf("Warning: t%d is not depletion mode and is being excluded\n", i);
+         }
+      }
    }
    ::fputs("]\n", trfile);
    ::fclose(trfile);
@@ -2400,6 +2438,8 @@ int main(int argc, char *argv[])
    ::fputs("}\n", nodefile);
    ::fclose(nodefile);
 
+   // ::exit(1);
+
    // ======================================================================
    // ============================= Simulation =============================
    // ======================================================================
@@ -2421,7 +2461,7 @@ int main(int argc, char *argv[])
          {
             if (pads[j].origsignal == PAD__RESET)
             {
-               if (i < DIVISOR * 8)
+               if (i < DIVISOR * 100)
                {
                   pads[j].SetInputSignal(SIG_GND);
                   pom_rst = true;
