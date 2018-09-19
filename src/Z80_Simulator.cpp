@@ -1015,6 +1015,13 @@ int FindTransistor(unsigned int x, unsigned int y)
    return -1;
 }
 
+int FindSignalX(int i)
+{
+   int sig = -1;
+   Transistor t = transistors[i];
+   return t.gate;
+}
+
 int FindSignal(int i)
 {
    int sig = -1;
@@ -1155,24 +1162,112 @@ int main(int argc, char *argv[])
 
    // Simulated Z80 program
 
-   memory[0x00] = 0x21;
-   memory[0x01] = 0x34;
-   memory[0x02] = 0x12;
-   memory[0x03] = 0x31;
-   memory[0x04] = 0xfe;
-   memory[0x05] = 0xdc;
-   memory[0x06] = 0xe5;
-   memory[0x07] = 0x21;
-   memory[0x08] = 0x78;
-   memory[0x09] = 0x56;
-   memory[0x0a] = 0xe3;
-   memory[0x0b] = 0xdd;
-   memory[0x0c] = 0x21;
-   memory[0x0d] = 0xbc;
-   memory[0x0e] = 0x9a;
-   memory[0x0f] = 0xdd;
-   memory[0x10] = 0xe3;
-   memory[0x11] = 0x76;
+   // 0x00,                    // NOP
+   // 0x3C,                    // INC A
+   // 0x04,                    // INC B
+   // 0x14,                    // INC D
+   // 0x24,                    // INC H
+   // 0xEB,                    // EXX DE,HL
+   // 0x00,                    // NOP
+   // 0x3C,                    // INC A
+   // 0x04,                    // INC B
+   // 0x14,                    // INC D
+   // 0x24,                    // INC H
+   // 0xD9,                    // EXX
+   // 0x00,                    // NOP
+   // 0x3C,                    // INC A
+   // 0x04,                    // INC B
+   // 0x14,                    // INC D
+   // 0x24,                    // INC H
+   // 0xEB,                    // EXX DE,HL
+   // 0x00,                    // NOP
+   // 0x3C,                    // INC A
+   // 0x04,                    // INC B
+   // 0x14,                    // INC D
+   // 0x24,                    // INC H
+   // 0x08,                    // EXX AF,AF'
+   // 0x00,                    // NOP
+   // 0x3C,                    // INC A
+   // 0x04,                    // INC B
+   // 0x14,                    // INC D
+   // 0x24,                    // INC H
+   // 0x00,                    // NOP
+   // 0x00,                    // NOP
+   // 0x00,                    // NOP
+   // 0x21, 0x00, 0x01,        // LD HL,$0100
+   // 0x36, 0xCC,              // LD (HL),$CC
+   // 0x00,                    // NOP
+   // 0x7E,                    // LD A, (HL)
+   // 0x00,                    // NOP
+   // 0x21, 0x34, 0x12,        // LD HL,$1234
+   // 0x31, 0xfe, 0xdc,        // LD SP,0xDCFE
+   // 0xe5,                    // PUSH HL
+   // 0x21, 0x78, 0x56,        // LD HL,$5678
+   // 0xe3,                    // EX (SP),HL
+   // 0xdd, 0x21, 0xbc,0x9a,   // LD IX, 0x9ABC
+   // 0xdd, 0xe3,              // EX (SP),IX
+   // 0x76                     // HALT
+
+   int mem_addr = 0;
+   
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x3C;
+   memory[mem_addr++] = 0x04;
+   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x24;
+   memory[mem_addr++] = 0xEB;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x3C;
+   memory[mem_addr++] = 0x04;
+   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x24;
+   memory[mem_addr++] = 0xD9;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x3C;
+   memory[mem_addr++] = 0x04;
+   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x24;
+   memory[mem_addr++] = 0xEB;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x3C;
+   memory[mem_addr++] = 0x04;
+   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x24;
+   memory[mem_addr++] = 0x08;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x3C;
+   memory[mem_addr++] = 0x04;
+   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x24;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x21;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x01;
+   memory[mem_addr++] = 0x36;
+   memory[mem_addr++] = 0xcc;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x7e;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x21;
+   memory[mem_addr++] = 0x34;
+   memory[mem_addr++] = 0x12;
+   memory[mem_addr++] = 0x31;
+   memory[mem_addr++] = 0xfe;
+   memory[mem_addr++] = 0xdc;
+   memory[mem_addr++] = 0xe5;
+   memory[mem_addr++] = 0x21;
+   memory[mem_addr++] = 0x78;
+   memory[mem_addr++] = 0x56;
+   memory[mem_addr++] = 0xe3;
+   memory[mem_addr++] = 0xdd;
+   memory[mem_addr++] = 0x21;
+   memory[mem_addr++] = 0xbc;
+   memory[mem_addr++] = 0x9a;
+   memory[mem_addr++] = 0xdd;
+   memory[mem_addr++] = 0xe3;
+   memory[mem_addr++] = 0x76;
 
    if (argc < 2)
    {
@@ -1957,6 +2052,37 @@ int main(int argc, char *argv[])
    unsigned int sig_m5 = FindTransistor(1014, 1243);
    unsigned int sig_m6 = FindTransistor(3180, 3026);
 
+   // There are multiple flip flops controlling the register set:
+   //
+   // AF vs AF' is at the gate of the transistor at (2306,3051). (The
+   // toggle flip flip is to the right of this, but I assume any part
+   // of the control line works for you.)
+   //
+   // The exx state (BC/DE/HL vs BC'/DE'/HL') is at the transistor
+   // gate at (979,3093)
+   //
+   // There are two DE vs HL flip flops, one for each exx state. You
+   // can get them from the transistors at (1449,2971) and
+   // (1193,2981).
+   //
+   // The combined DE vs HL control line is at the gate of the
+   // transistor at (1443,3001).
+   //
+   // The transistors are arbitrary ones with their gates connected to
+   // the control lines, so hopefully they will work for you.
+
+   //unsigned int sig_ex_af            = FindTransistor(2306, 3051);
+   //unsigned int sig_ex_bcdehl        = FindTransistor(979, 3093);
+   //unsigned int sig_ex_dehl0         = FindTransistor(1449, 2971);
+   //unsigned int sig_ex_dehl1         = FindTransistor(1193, 2981);
+   //unsigned int sig_ex_dehl_combined = FindTransistor(1443, 3001);
+
+   unsigned int sig_ex_af            = FindTransistor(2455, 3030);
+   unsigned int sig_ex_bcdehl        = FindTransistor( 661, 3130);
+   unsigned int sig_ex_dehl0         = FindTransistor(1018, 2981);
+   unsigned int sig_ex_dehl1         = FindTransistor(1193, 2981);
+   unsigned int sig_ex_dehl_combined = FindTransistor(1443, 3001);
+
    reg_pcl[0] = FindTransistor(1345, 3231);
    reg_pcl[1] = FindTransistor(1345, 3307);
    reg_pcl[2] = FindTransistor(1345, 3375);
@@ -2355,22 +2481,22 @@ int main(int argc, char *argv[])
    ::fprintf(nodefile, "vss: %d,\n",SIG_GND);
    ::fprintf(nodefile, "vcc: %d,\n",SIG_VCC);
    ::fprintf(nodefile, "clk: %d,\n",PAD_CLK);
-   ::fprintf(nodefile, "a0: %d,\n",PAD_A0);
-   ::fprintf(nodefile, "a1: %d,\n",PAD_A1);
-   ::fprintf(nodefile, "a2: %d,\n",PAD_A2);
-   ::fprintf(nodefile, "a3: %d,\n",PAD_A3);
-   ::fprintf(nodefile, "a4: %d,\n",PAD_A4);
-   ::fprintf(nodefile, "a5: %d,\n",PAD_A5);
-   ::fprintf(nodefile, "a6: %d,\n",PAD_A6);
-   ::fprintf(nodefile, "a7: %d,\n",PAD_A7);
-   ::fprintf(nodefile, "a8: %d,\n",PAD_A8);
-   ::fprintf(nodefile, "a9: %d,\n",PAD_A9);
-   ::fprintf(nodefile, "a10: %d,\n",PAD_A10);
-   ::fprintf(nodefile, "a11: %d,\n",PAD_A11);
-   ::fprintf(nodefile, "a12: %d,\n",PAD_A12);
-   ::fprintf(nodefile, "a13: %d,\n",PAD_A13);
-   ::fprintf(nodefile, "a14: %d,\n",PAD_A14);
-   ::fprintf(nodefile, "a15: %d,\n",PAD_A15);
+   ::fprintf(nodefile, "ab0: %d,\n",PAD_A0);
+   ::fprintf(nodefile, "ab1: %d,\n",PAD_A1);
+   ::fprintf(nodefile, "ab2: %d,\n",PAD_A2);
+   ::fprintf(nodefile, "ab3: %d,\n",PAD_A3);
+   ::fprintf(nodefile, "ab4: %d,\n",PAD_A4);
+   ::fprintf(nodefile, "ab5: %d,\n",PAD_A5);
+   ::fprintf(nodefile, "ab6: %d,\n",PAD_A6);
+   ::fprintf(nodefile, "ab7: %d,\n",PAD_A7);
+   ::fprintf(nodefile, "ab8: %d,\n",PAD_A8);
+   ::fprintf(nodefile, "ab9: %d,\n",PAD_A9);
+   ::fprintf(nodefile, "ab10: %d,\n",PAD_A10);
+   ::fprintf(nodefile, "ab11: %d,\n",PAD_A11);
+   ::fprintf(nodefile, "ab12: %d,\n",PAD_A12);
+   ::fprintf(nodefile, "ab13: %d,\n",PAD_A13);
+   ::fprintf(nodefile, "ab14: %d,\n",PAD_A14);
+   ::fprintf(nodefile, "ab15: %d,\n",PAD_A15);
    ::fprintf(nodefile, "_reset: %d,\n",PAD__RESET);
    ::fprintf(nodefile, "_wait: %d,\n",PAD__WAIT);
    ::fprintf(nodefile, "_int: %d,\n",PAD__INT);
@@ -2382,29 +2508,37 @@ int main(int argc, char *argv[])
    ::fprintf(nodefile, "_mreq: %d,\n",PAD__MREQ);
    ::fprintf(nodefile, "_iorq: %d,\n",PAD__IORQ);
    ::fprintf(nodefile, "_rfsh: %d,\n",PAD__RFSH);
-   ::fprintf(nodefile, "d0: %d,\n",PAD_D0);
-   ::fprintf(nodefile, "d1: %d,\n",PAD_D1);
-   ::fprintf(nodefile, "d2: %d,\n",PAD_D2);
-   ::fprintf(nodefile, "d3: %d,\n",PAD_D3);
-   ::fprintf(nodefile, "d4: %d,\n",PAD_D4);
-   ::fprintf(nodefile, "d5: %d,\n",PAD_D5);
-   ::fprintf(nodefile, "d6: %d,\n",PAD_D6);
-   ::fprintf(nodefile, "d7: %d,\n",PAD_D7);
+   ::fprintf(nodefile, "db0: %d,\n",PAD_D0);
+   ::fprintf(nodefile, "db1: %d,\n",PAD_D1);
+   ::fprintf(nodefile, "db2: %d,\n",PAD_D2);
+   ::fprintf(nodefile, "db3: %d,\n",PAD_D3);
+   ::fprintf(nodefile, "db4: %d,\n",PAD_D4);
+   ::fprintf(nodefile, "db5: %d,\n",PAD_D5);
+   ::fprintf(nodefile, "db6: %d,\n",PAD_D6);
+   ::fprintf(nodefile, "db7: %d,\n",PAD_D7);
    ::fprintf(nodefile, "_halt: %d,\n",PAD__HALT);
    ::fprintf(nodefile, "_busak: %d,\n",PAD__BUSAK);
 
-   ::fprintf(nodefile, "t1: %d,\n", FindSignal(sig_t1));
-   ::fprintf(nodefile, "t2: %d,\n", FindSignal(sig_t2));
-   ::fprintf(nodefile, "t3: %d,\n", FindSignal(sig_t3));
-   ::fprintf(nodefile, "t4: %d,\n", FindSignal(sig_t4));
-   ::fprintf(nodefile, "t5: %d,\n", FindSignal(sig_t5));
-   ::fprintf(nodefile, "t6: %d,\n", FindSignal(sig_t6));
-   ::fprintf(nodefile, "m1: %d,\n", FindSignal(sig_m1));
-   ::fprintf(nodefile, "m2: %d,\n", FindSignal(sig_m2));
-   ::fprintf(nodefile, "m3: %d,\n", FindSignal(sig_m3));
-   ::fprintf(nodefile, "m4: %d,\n", FindSignal(sig_m4));
-   ::fprintf(nodefile, "m5: %d,\n", FindSignal(sig_m5));
-   ::fprintf(nodefile, "m6: %d,\n", FindSignal(sig_m6));
+   ::fprintf(nodefile, "t1: %d,\n", FindSignalX(sig_t1));
+   ::fprintf(nodefile, "t2: %d,\n", FindSignalX(sig_t2));
+   ::fprintf(nodefile, "t3: %d,\n", FindSignalX(sig_t3));
+   ::fprintf(nodefile, "t4: %d,\n", FindSignalX(sig_t4));
+   ::fprintf(nodefile, "t5: %d,\n", FindSignalX(sig_t5));
+   ::fprintf(nodefile, "t6: %d,\n", FindSignalX(sig_t6));
+   ::fprintf(nodefile, "m1: %d,\n", FindSignalX(sig_m1));
+   ::fprintf(nodefile, "m2: %d,\n", FindSignalX(sig_m2));
+   ::fprintf(nodefile, "m3: %d,\n", FindSignalX(sig_m3));
+   ::fprintf(nodefile, "m4: %d,\n", FindSignalX(sig_m4));
+   ::fprintf(nodefile, "m5: %d,\n", FindSignalX(sig_m5));
+   ::fprintf(nodefile, "m6: %d,\n", FindSignalX(sig_m6));
+   ::fprintf(nodefile, "m6: %d,\n", FindSignalX(sig_m6));
+
+   ::fprintf(nodefile, "ex_af: %d,\n", FindSignalX(sig_ex_af));
+   ::fprintf(nodefile, "ex_bcdehl: %d,\n", FindSignalX(sig_ex_bcdehl));
+   ::fprintf(nodefile, "ex_dehl0: %d,\n", FindSignalX(sig_ex_dehl0));
+   ::fprintf(nodefile, "ex_dehl1: %d,\n", FindSignalX(sig_ex_dehl1));
+   ::fprintf(nodefile, "ex_dehl_combined: %d,\n", FindSignalX(sig_ex_dehl_combined));
+   
    for (int i = 0; i < 8; i++) {
       ::fprintf(nodefile, "reg_a%d: %d,\n",   i, FindSignal(reg_a[i]));
       ::fprintf(nodefile, "reg_f%d: %d,\n",   i, FindSignal(reg_f[i]));
@@ -2913,6 +3047,12 @@ int main(int argc, char *argv[])
          printf("%c", (transistors[sig_m4].IsOn()) ? '4' : '.');
          printf("%c", (transistors[sig_m5].IsOn()) ? '5' : '.');
 
+         printf(" E:%c",         (transistors[sig_ex_af].IsOn()) ? '1' : '0');
+         printf("%c",        (transistors[sig_ex_bcdehl].IsOn()) ? '1' : '0');
+         printf("%c",         (transistors[sig_ex_dehl0].IsOn()) ? '1' : '0');
+         printf("%c",         (transistors[sig_ex_dehl1].IsOn()) ? '1' : '0');
+         printf("%c", (transistors[sig_ex_dehl_combined].IsOn()) ? '1' : '0');
+         
       // printf(" T2:%c", (transistors[sig_trap2].IsOn()) ? 'X' : '.');
       // printf(" U:%c", (transistors[sig_trap2_up].IsOn()) ? 'X' : '.');
       // printf(" D:%c", (transistors[sig_trap2_down].IsOn()) ? 'X' : '.');
