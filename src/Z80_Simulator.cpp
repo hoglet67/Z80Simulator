@@ -1335,7 +1335,7 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
       // Consider outputting the point
       if (point) {
          // TODO: deal with diagnonals
-         if (x != vertex_x && y != vertex_y) {
+         if (x != vertex_x && y != vertex_y && (last_x != vertex_x || last_y != vertex_y)) {
             // Output the last point as a vertex
             ::fprintf(segfile, ",%d,%d", last_x, size_y - last_y - 1);
             // printf("%d %d\n", last_x, last_y);
