@@ -1241,8 +1241,6 @@ void write_segdefs_file_simple() {
    ::fclose(segfile);
 }
 
-#define EXCLUSION 50
-
 #define CONSTRAINT_NONE     0
 #define CONSTRAINT_GND      1
 #define CONSTRAINT_VCC      2
@@ -1266,13 +1264,9 @@ void write_segdefs_file_simple() {
 #define DIR_L 2
 #define DIR_U 3
 
-void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int start_y) {
+void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y) {
    int sig = sigs[start_y * size_x + start_x];
    ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
-
-
-   if (layer > 0) {
-
 
    // printf("tracing signal %d starting at %d, %d\n", sig, start_x, start_y);
 
@@ -1312,7 +1306,7 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
 
       // Test the next point, if within the image
       int point = 0;
-      if (x >= EXCLUSION && x < size_x - EXCLUSION && y >= EXCLUSION && y < size_y - EXCLUSION) {
+      if (x >= min_x && x < max_x && y >= min_y && y < max_y) {
          point = sigs[y * size_x + x];
       }
 
@@ -1354,9 +1348,7 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
       len++;
    } while (len < 100000 && (x != start_x || y != start_y));
 
-   printf("len = %d\n", len);
-
-   }
+   //printf("len = %d\n", len);
 
    ::fprintf(segfile, "],\n");
 
@@ -1364,35 +1356,57 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
 }
 
 
+
 void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constraint) {
-   for (int y = EXCLUSION; y < size_y - EXCLUSION; y++) {
-      int last_sig = 0;
-      for (int x = EXCLUSION; x < size_x - EXCLUSION; x++) {
-         int sig = sigs[y * size_x + x];
-         // Identify the top left corner of an object
-         if (last_sig == 0 && sig > 0 && sig < 0x8000) {
-            bool found;
-            switch (constraint) {
-            case CONSTRAINT_NONE:
-               found = true;
-               break;
-            case CONSTRAINT_GND:
-               found = sig == SIG_GND;
-               break;
-            case CONSTRAINT_VCC:
-               found = sig == SIG_VCC;
-               break;
-            case CONSTRAINT_SWITCHED:
-               found = sig != SIG_GND && sig != SIG_VCC;
-               break;
-            default:
-               found = false;
-            }
-            if (found) {
-               trace_boundary(segfile, layer, sigs, x, y);
+   // Segment the image into two halves, which is good enough to break up any very
+   // large shapes that contain holes. This is a bit of a cludge, but simple boundary
+   // detection algorithms don't handle holes.
+   int block_size_x = 2350;
+   int block_size_y = 5000;
+   if (layer == 0) {
+      // For the metal layer, break up a bit more, as there are smaller loops
+      block_size_y = 1250;
+   }
+   for (int min_y = 0; min_y < size_y; min_y += block_size_y) {
+      int max_y = min_y + block_size_y;
+      if (max_y > size_y) {
+         max_y = size_y;
+      }
+      for (int min_x = 0; min_x < size_x; min_x += block_size_x) {
+         int max_x = min_x + block_size_x;
+         if (max_x > size_x) {
+            max_x = size_x;
+         }
+         for (int y = min_y; y < max_y; y++) {
+            int last_sig = 0;
+            for (int x = min_x; x < max_x; x++) {
+               int sig = sigs[y * size_x + x];
+               // Identify the top left corner of an object
+               if (last_sig == 0 && sig > 0 && sig < 0x8000) {
+                  bool found;
+                  switch (constraint) {
+                  case CONSTRAINT_NONE:
+                     found = true;
+                     break;
+                  case CONSTRAINT_GND:
+                     found = sig == SIG_GND;
+                     break;
+                  case CONSTRAINT_VCC:
+                     found = sig == SIG_VCC;
+                     break;
+                  case CONSTRAINT_SWITCHED:
+                     found = sig != SIG_GND && sig != SIG_VCC;
+                     break;
+                  default:
+                     found = false;
+                  }
+                  if (found) {
+                     trace_boundary(segfile, layer, sigs, x, y, min_x, min_y, max_x, max_y);
+                  }
+               }
+               last_sig = sig;
             }
          }
-         last_sig = sig;
       }
    }
    uint16_t *sp = sigs;
