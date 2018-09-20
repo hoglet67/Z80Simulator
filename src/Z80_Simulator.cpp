@@ -190,12 +190,14 @@ public:
    vector<Connection> connections;
    float signalarea;
    bool ignore;
+   bool pullup;
 };
 
 Signal::Signal()
 {
    signalarea = 0.0f;
    ignore = false;
+   pullup = false;
 }
 
 vector<Signal> signals;
@@ -1152,6 +1154,282 @@ void SetupPad(int x, int y, int signalnum, int padtype)
    RouteSignal(tmppad.x, tmppad.y, tmppad.origsignal, METAL);
 }
 
+
+void write_transdefs_file() {
+      // The format here is
+   //   name
+   //   gate,c1,c2
+   //   bb (bounding box: xmin, xmax, ymin, ymax)
+   //   geometry (unused) (width1, width2, length, #segments, area)
+   //   weak (boolean) (marks weak transistors, whether pullups or pass gates)
+   //
+
+   FILE* trfile = ::fopen("transdefs.js", "wb");
+   ::fputs("var transdefs = [\n", trfile);
+   for (unsigned int i = 0; i < transistors.size(); i++)
+   {
+      int weak = 0;
+      // ['t1',1646,13,663,[560,721,2656,2730],[415,415,11,5,4566],false],
+      Transistor t = transistors[i];
+      // Omit transistors that are pullups
+      if (t.source != t.gate || t.drain != SIG_VCC) {
+         if (t.drain == SIG_VCC && t.gate == SIG_VCC) {
+            printf("Warning: t%d is a enhancement pullup (g=%d, s=%d, d=%d) - marking as weak\n", i, t.gate, t.source, t.drain);
+            weak = 1;
+         } else {
+            if (t.source == SIG_GND && t.gate == SIG_GND) {
+               printf("Warning: t%d is a protection diode (g=%d, s=%d, d=%d) - excluding\n", i, t.gate, t.source, t.drain);
+               continue;
+            }
+            if (t.source == 0) {
+               printf("Warning: t%d has disconnected source (area = %d) - excluding\n", i, (int) t.area);
+               continue;
+            }
+            if (t.drain == 0) {
+               printf("Warning: t%d has disconnected drain (area = %d) - excluding\n", i, (int) t.area);
+               continue;
+            }
+            if (t.gate == 0) {
+               printf("Warning: t%d has disconnected gate (area = %d) - excluding\n", i, (int) t.area);
+               continue;
+            }
+            if (t.source == t.gate || t.source == t.drain || t.gate == t.drain) {
+               printf("Warning: t%d has unusual connections (g=%d, s=%d, d=%d)\n", i, t.gate, t.source, t.drain);
+            }
+         }
+         int gate = t.gate;
+         if (t.depletion) {
+            printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? forcing gate to VCC in netlist\n", i, t.gate, t.source, t.drain);
+            gate = SIG_VCC;
+         }
+         ::fprintf(trfile, "['t%d',%d,%d,%d,", i, gate, t.source, t.drain);
+         ::fprintf(trfile, "[%d,%d,%d,%d],", t.x, t.y, 1, 1);
+         ::fprintf(trfile, "[%d,%d,%d,%d,%d],%s,],\n", 1, 1, 1, 1, (int) t.area, (weak ? "true" : "false"));
+      } else {
+         if (!t.depletion) {
+            printf("Warning: t%d is not depletion mode and is being excluded\n", i);
+         }
+      }
+   }
+   ::fputs("]\n", trfile);
+   ::fclose(trfile);
+}
+
+
+void write_segdefs_file_simple() {
+   FILE* segfile = ::fopen("segdefs.js", "wb");
+   ::fputs("var segdefs = [\n", segfile);
+   for (unsigned int i = 0; i < signals.size(); i++)
+   {
+      // [   0,'+',1,5391,8260,5391,8216,5357,8216,5357,8260],
+      int pullup = '-';
+      if (i != SIG_GND || i != SIG_VCC) {
+         // Work out if signal is a depletion
+         for (unsigned int j = 0; j < signals[i].connections.size(); j++) {
+            Transistor t = transistors[signals[i].connections[j].index];
+            if (t.source == i && t.gate == i && t.drain == SIG_VCC) {
+               pullup = '+';
+               if (!t.depletion) {
+                  printf("Warning: sig %d / transistor %d expected to be depletion\n", i, j);
+               }
+            }
+         }
+      }
+      ::fprintf(segfile, "[ %d,'%c',1],\n", i, pullup);
+   }
+   ::fputs("]\n", segfile);
+   ::fclose(segfile);
+}
+
+#define EXCLUSION 50
+
+#define CONSTRAINT_NONE     0
+#define CONSTRAINT_GND      1
+#define CONSTRAINT_VCC      2
+#define CONSTRAINT_SWITCHED 3
+
+// Layers:
+// 0 - Metal
+// 1 - Switched Diffusion (signal != SIG_GND && signal != SIG_VCC)
+// 2 - Input Diode
+// 3 - Grounded Diffusion (signal == SIG_GND)
+// 4 - Powered Diffusion (signal == SIG_VCC)
+// 5 - Polysilicon
+
+// [   0,'+',1,5391,8260,5391,8216,5357,8216,5357,8260],
+
+// +1 to turn right
+// -1 to turn left
+
+#define DIR_R 0
+#define DIR_D 1
+#define DIR_L 2
+#define DIR_U 3
+
+void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int start_y) {
+   int sig = sigs[start_y * size_x + start_x];
+   ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
+
+
+   if (layer > 0) {
+
+
+   // printf("tracing signal %d starting at %d, %d\n", sig, start_x, start_y);
+
+   // Trace the boundary using the "square tracing" algorithm
+
+   // Starting point is the top left corner, so start facing right
+
+   int len      = 0;
+   int x        = start_x;
+   int y        = start_y;
+   int dir      = DIR_R;
+   int vertex_x = x;
+   int vertex_y = y;
+   int last_x   = x;
+   int last_y   = y;
+
+   // Output the start point, and mark as visited
+   ::fprintf(segfile, ",%d,%d", x, y);
+   sigs[y * size_x + x] |= 0x8000;
+
+   do {
+      // Step forwards
+      switch (dir) {
+      case DIR_U:
+         y = y - 1;
+         break;
+      case DIR_D:
+         y = y + 1;
+         break;
+      case DIR_L:
+         x = x - 1;
+         break;
+      case DIR_R:
+         x = x + 1;
+         break;
+      }
+
+      // Test the next point, if within the image
+      int point = 0;
+      if (x >= EXCLUSION && x < size_x - EXCLUSION && y >= EXCLUSION && y < size_y - EXCLUSION) {
+         point = sigs[y * size_x + x];
+      }
+
+      // If point is on the boundary, mark as visited
+      if (point) {
+         sigs[y * size_x + x] |= 0x8000;
+      }
+
+      // Turn accordingly
+      if (point) {
+         // Turn left
+         if (dir == 0) {
+            dir = 3;
+         } else {
+            dir = dir - 1;
+         }
+      } else {
+         // Turn right
+         if (dir == 3) {
+            dir = 0;
+         } else {
+            dir = dir + 1;
+         }
+      }
+
+      // Consider outputting the point
+      if (point) {
+         // TODO: deal with diagnonals
+         if (x != vertex_x && y != vertex_y) {
+            // Output the last point as a vertex
+            ::fprintf(segfile, ",%d,%d", last_x, last_y);
+            // printf("%d %d\n", last_x, last_y);
+            vertex_x = last_x;
+            vertex_y = last_y;
+         }
+         last_x = x;
+         last_y = y;
+      }
+      len++;
+   } while (len < 100000 && (x != start_x || y != start_y));
+
+   printf("len = %d\n", len);
+
+   }
+
+   ::fprintf(segfile, "],\n");
+
+   //::exit(1);
+}
+
+
+void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constraint) {
+   for (int y = EXCLUSION; y < size_y - EXCLUSION; y++) {
+      int last_sig = 0;
+      for (int x = EXCLUSION; x < size_x - EXCLUSION; x++) {
+         int sig = sigs[y * size_x + x];
+         // Identify the top left corner of an object
+         if (last_sig == 0 && sig > 0 && sig < 0x8000) {
+            bool found;
+            switch (constraint) {
+            case CONSTRAINT_NONE:
+               found = true;
+               break;
+            case CONSTRAINT_GND:
+               found = sig == SIG_GND;
+               break;
+            case CONSTRAINT_VCC:
+               found = sig == SIG_VCC;
+               break;
+            case CONSTRAINT_SWITCHED:
+               found = sig != SIG_GND && sig != SIG_VCC;
+               break;
+            default:
+               found = false;
+            }
+            if (found) {
+               trace_boundary(segfile, layer, sigs, x, y);
+            }
+         }
+         last_sig = sig;
+      }
+   }
+   uint16_t *sp = sigs;
+   for (int i = 0; i < size_x * size_y; i++) {
+      *sp &= 0x7FFF;
+      sp++;
+   }
+}
+
+
+void  write_segdefs_file() {
+   // First, work out whether each signal needs to be marked with a depletion pullup
+   for (unsigned int i = FIRST_SIGNAL; i < signals.size(); i++) {
+      // Work out if signal is a depletion
+      for (unsigned int j = 0; j < signals[i].connections.size(); j++) {
+         Transistor t = transistors[signals[i].connections[j].index];
+         if (t.source == i && t.gate == i && t.drain == SIG_VCC) {
+            signals[i].pullup = true;
+            if (!t.depletion) {
+               printf("Warning: sig %d / transistor %d expected to be depletion\n", i, j);
+            }
+         }
+      }
+   }
+
+   FILE* segfile = ::fopen("segdefs.js", "wb");
+   ::fputs("var segdefs = [\n", segfile);
+   write_layer_segments(segfile, 0, signals_metal, CONSTRAINT_NONE);
+   write_layer_segments(segfile, 1, signals_diff,  CONSTRAINT_SWITCHED);
+   write_layer_segments(segfile, 3, signals_diff,  CONSTRAINT_GND);
+   write_layer_segments(segfile, 4, signals_diff,  CONSTRAINT_VCC);
+   write_layer_segments(segfile, 5, signals_poly,  CONSTRAINT_NONE);
+   ::fputs("]\n", segfile);
+   ::fclose(segfile);
+}
+
+
 // Everything starts here
 int main(int argc, char *argv[])
 {
@@ -1209,7 +1487,7 @@ int main(int argc, char *argv[])
    // 0x76                     // HALT
 
    int mem_addr = 0;
-   
+
    memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x3C;
    memory[mem_addr++] = 0x04;
@@ -1992,15 +2270,6 @@ int main(int argc, char *argv[])
    myImage.write(filename);
 
 
-   // =============================
-   // End of saving colored bitmaps
-   // =============================
-
-   delete pombuf;
-   delete signals_diff;
-   delete signals_poly;
-   delete signals_metal;
-
 
    // -------------------------------------------------------
    // -------------------------------------------------------
@@ -2393,88 +2662,9 @@ int main(int argc, char *argv[])
    printf("----------------- Writing netlist files----------------\n");
    printf("-------------------------------------------------------\n");
 
-   // The format here is
-   //   name
-   //   gate,c1,c2
-   //   bb (bounding box: xmin, xmax, ymin, ymax)
-   //   geometry (unused) (width1, width2, length, #segments, area)
-   //   weak (boolean) (marks weak transistors, whether pullups or pass gates)
-   //
+   write_transdefs_file();
 
-   FILE* trfile = ::fopen("transdefs.js", "wb");
-   ::fputs("var transdefs = [\n", trfile);
-   for (unsigned int i = 0; i < transistors.size(); i++)
-   {
-      int weak = 0;
-      // ['t1',1646,13,663,[560,721,2656,2730],[415,415,11,5,4566],false],
-      Transistor t = transistors[i];
-      // Omit transistors that are pullups
-      if (t.source != t.gate || t.drain != SIG_VCC) {
-         if (t.drain == SIG_VCC && t.gate == SIG_VCC) {
-            printf("Warning: t%d is a enhancement pullup (g=%d, s=%d, d=%d) - marking as weak\n", i, t.gate, t.source, t.drain);
-            weak = 1;
-         } else {
-            if (t.source == SIG_GND && t.gate == SIG_GND) {
-               printf("Warning: t%d is a protection diode (g=%d, s=%d, d=%d) - excluding\n", i, t.gate, t.source, t.drain);
-               continue;
-            }
-            if (t.source == 0) {
-               printf("Warning: t%d has disconnected source (area = %d) - excluding\n", i, (int) t.area);
-               continue;
-            }
-            if (t.drain == 0) {
-               printf("Warning: t%d has disconnected drain (area = %d) - excluding\n", i, (int) t.area);
-               continue;
-            }
-            if (t.gate == 0) {
-               printf("Warning: t%d has disconnected gate (area = %d) - excluding\n", i, (int) t.area);
-               continue;
-            }
-            if (t.source == t.gate || t.source == t.drain || t.gate == t.drain) {
-               printf("Warning: t%d has unusual connections (g=%d, s=%d, d=%d)\n", i, t.gate, t.source, t.drain);
-            }
-         }
-         int gate = t.gate;
-         if (t.depletion) {
-            printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? forcing gate to VCC in netlist\n", i, t.gate, t.source, t.drain);
-            gate = SIG_VCC;
-         }
-         ::fprintf(trfile, "['t%d',%d,%d,%d,", i, gate, t.source, t.drain);
-         ::fprintf(trfile, "[%d,%d,%d,%d],", t.x, t.y, 1, 1);
-         ::fprintf(trfile, "[%d,%d,%d,%d,%d],%s,],\n", 1, 1, 1, 1, (int) t.area, (weak ? "true" : "false"));
-      } else {
-         if (!t.depletion) {
-            printf("Warning: t%d is not depletion mode and is being excluded\n", i);
-         }
-      }
-   }
-   ::fputs("]\n", trfile);
-   ::fclose(trfile);
-
-
-   FILE* segfile = ::fopen("segdefs.js", "wb");
-   ::fputs("var segdefs = [\n", segfile);
-   for (unsigned int i = 0; i < signals.size(); i++)
-   {
-      // [   0,'+',1,5391,8260,5391,8216,5357,8216,5357,8260],
-      int pullup = '-';
-      if (i != SIG_GND || i != SIG_VCC) {
-         // Work out if signal is a depletion
-         for (unsigned int j = 0; j < signals[i].connections.size(); j++) {
-            Transistor t = transistors[signals[i].connections[j].index];
-            if (t.source == i && t.gate == i && t.drain == SIG_VCC) {
-               pullup = '+';
-               if (!t.depletion) {
-                  printf("Warning: sig %d / transistor %d expected to be depletion\n", i, j);
-               }
-            }
-         }
-      }
-      ::fprintf(segfile, "[ %d,'%c',1],\n", i, pullup);
-   }
-   ::fputs("]\n", segfile);
-   ::fclose(segfile);
-
+   write_segdefs_file();
 
    FILE* nodefile = ::fopen("nodenames.js", "wb");
    ::fputs("var nodenames ={\n", nodefile);
@@ -2538,7 +2728,7 @@ int main(int argc, char *argv[])
    ::fprintf(nodefile, "ex_dehl0: %d,\n", FindSignalX(sig_ex_dehl0));
    ::fprintf(nodefile, "ex_dehl1: %d,\n", FindSignalX(sig_ex_dehl1));
    ::fprintf(nodefile, "ex_dehl_combined: %d,\n", FindSignalX(sig_ex_dehl_combined));
-   
+
    for (int i = 0; i < 8; i++) {
       ::fprintf(nodefile, "reg_a%d: %d,\n",   i, FindSignal(reg_a[i]));
       ::fprintf(nodefile, "reg_f%d: %d,\n",   i, FindSignal(reg_f[i]));
@@ -2572,7 +2762,18 @@ int main(int argc, char *argv[])
    ::fputs("}\n", nodefile);
    ::fclose(nodefile);
 
-   // ::exit(1);
+
+   // =============================
+   // End of saving colored bitmaps
+   // =============================
+
+   delete pombuf;
+   delete signals_diff;
+   delete signals_poly;
+   delete signals_metal;
+
+
+   ::exit(1);
 
    // ======================================================================
    // ============================= Simulation =============================
@@ -3052,7 +3253,7 @@ int main(int argc, char *argv[])
          printf("%c",         (transistors[sig_ex_dehl0].IsOn()) ? '1' : '0');
          printf("%c",         (transistors[sig_ex_dehl1].IsOn()) ? '1' : '0');
          printf("%c", (transistors[sig_ex_dehl_combined].IsOn()) ? '1' : '0');
-         
+
       // printf(" T2:%c", (transistors[sig_trap2].IsOn()) ? 'X' : '.');
       // printf(" U:%c", (transistors[sig_trap2_up].IsOn()) ? 'X' : '.');
       // printf(" D:%c", (transistors[sig_trap2_down].IsOn()) ? 'X' : '.');
