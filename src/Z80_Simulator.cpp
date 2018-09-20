@@ -1312,7 +1312,6 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
 
       // If point is on the boundary, mark as visited
       if (point) {
-         sigs[y * size_x + x] |= 0x8000;
       }
 
       // Turn accordingly
@@ -1333,9 +1332,10 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
       }
 
       // Consider outputting the point
-      if (point) {
-         // TODO: deal with diagnonals
-         if (x != vertex_x && y != vertex_y && (last_x != vertex_x || last_y != vertex_y)) {
+      if (point && point < 0x8000) {
+         // Mark as visited so we only process once
+         sigs[y * size_x + x] |= 0x8000;
+         if (x != vertex_x && y != vertex_y) {
             // Output the last point as a vertex
             ::fprintf(segfile, ",%d,%d", last_x, size_y - last_y - 1);
             // printf("%d %d\n", last_x, last_y);
