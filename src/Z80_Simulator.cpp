@@ -1156,7 +1156,7 @@ void SetupPad(int x, int y, int signalnum, int padtype)
 
 
 void write_transdefs_file() {
-      // The format here is
+   // The format here is
    //   name
    //   gate,c1,c2
    //   bb (bounding box: xmin, xmax, ymin, ymax)
@@ -1202,8 +1202,16 @@ void write_transdefs_file() {
             printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? forcing gate to VCC in netlist\n", i, t.gate, t.source, t.drain);
             gate = SIG_VCC;
          }
+         int sx = t.x;
+         while (pombuf[t.y * size_x + sx] & TRANSISTORS) {
+            sx++;
+         }
+         int sy = t.y;
+         while (pombuf[sy * size_x + t.x] & TRANSISTORS) {
+            sy++;
+         }
          ::fprintf(trfile, "['t%d',%d,%d,%d,", i, gate, t.source, t.drain);
-         ::fprintf(trfile, "[%d,%d,%d,%d],", t.x, t.y, 1, 1);
+         ::fprintf(trfile, "[%d,%d,%d,%d],", t.x, sx, size_y - sy - 1, size_y - t.y - 1);
          ::fprintf(trfile, "[%d,%d,%d,%d,%d],%s,],\n", 1, 1, 1, 1, (int) t.area, (weak ? "true" : "false"));
       } else {
          if (!t.depletion) {
