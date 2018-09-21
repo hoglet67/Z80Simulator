@@ -1268,20 +1268,23 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
    int sig = sigs[start_y * size_x + start_x];
    ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
 
-   // printf("tracing signal %d starting at %d, %d\n", sig, start_x, start_y);
+   printf("tracing signal %d starting at %d, %d\n", sig, start_x, start_y);
 
    // Trace the boundary using the "square tracing" algorithm
 
    // Starting point is the top left corner, so start facing right
 
-   int len      = 0;
-   int x        = start_x;
-   int y        = start_y;
-   int dir      = DIR_R;
-   int vertex_x = x;
-   int vertex_y = y;
-   int last_x   = x;
-   int last_y   = y;
+   int len_in_px = 0;
+   int len_in_vx = 0;
+   int x         = start_x;
+   int y         = start_y;
+   int dir       = DIR_R;
+   int vertex_x  = y; // The last vertex that was output
+   int vertex_y  = y;
+   int tmp_x     = x; // The last point that was orthogonal (or 45 degrees) with vertex
+   int tmp_y     = y;
+
+   bool debug = false; // sig == 21;
 
    // Output the start point, and mark as visited
    ::fprintf(segfile, ",%d,%d", x, size_y - y - 1);
@@ -1331,28 +1334,66 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
          }
       }
 
-      // Consider outputting the point
+      // Ensure we process each boundary point just once
       if (point && point < 0x8000) {
-         // Mark as visited so we only process once
-         sigs[y * size_x + x] |= 0x8000;
-         if (x != vertex_x && y != vertex_y) {
-            // Output the last point as a vertex
-            ::fprintf(segfile, ",%d,%d", last_x, size_y - last_y - 1);
-            // printf("%d %d\n", last_x, last_y);
-            vertex_x = last_x;
-            vertex_y = last_y;
-         }
-         last_x = x;
-         last_y = y;
-      }
-      len++;
-   } while (len < 100000 && (x != start_x || y != start_y));
 
-   //printf("len = %d\n", len);
+         // Mark as visited
+         sigs[y * size_x + x] |= 0x8000;
+
+         // Calculate the difference between x,y and the last vertex
+         int dx = x - vertex_x;
+         if (dx < 0) {
+            dx = -dx;
+         }
+         int dy = y - vertex_y;
+         if (dy < 0) {
+            dy = -dy;
+         }
+         int dd = dy - dx;
+         if (dd < 0) {
+            dd = -dd;
+         }
+
+         if (debug) {
+            printf("point %d, %d; dx = %d; dy = %d; dd = %d; ", x, y, dx, dy, dd);
+         }
+
+         // Based on that difference, choose whether to updated tmp or vertex
+         if (dx == 0 || dy == 0 || dd == 0) {
+            tmp_x = x;
+            tmp_y = y;
+            if (debug) {
+               printf("updating tmp\n");
+            }
+         } else if (dd > 1) {
+            vertex_x = tmp_x;
+            vertex_y = tmp_y;
+            tmp_x = x;
+            tmp_y = y;
+            if (debug) {
+               printf("outputing vertex %d, %d and updating tmp\n", vertex_x, vertex_y);
+            }
+            // Output the last orthginal point as a vertex
+            ::fprintf(segfile, ",%d,%d", vertex_x, size_y - vertex_y - 1);
+            len_in_vx++;
+         } else {
+            if (debug) {
+               printf("\n");
+            }
+         }
+      }
+
+      len_in_px++;
+
+   } while (len_in_px < 100000 && (x != start_x || y != start_y));
+
+   printf("len_in_px = %d; len_in_vx = %d\n", len_in_px, len_in_vx);
 
    ::fprintf(segfile, "],\n");
 
-   //::exit(1);
+   if (debug) {
+      ::exit(1);
+   }
 }
 
 
