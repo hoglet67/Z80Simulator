@@ -1164,6 +1164,11 @@ void write_transdefs_file() {
    //   weak (boolean) (marks weak transistors, whether pullups or pass gates)
    //
 
+   // Maintain a list of signals that should be forces to ground sue to traps
+   // (the depletion mode transistors are processed first, so two passes are not required)
+
+   vector<int> force_to_ground;
+
    FILE* trfile = ::fopen("transdefs.js", "wb");
    ::fputs("var transdefs = [\n", trfile);
    for (unsigned int i = 0; i < transistors.size(); i++)
@@ -1197,10 +1202,11 @@ void write_transdefs_file() {
                printf("Warning: t%d has unusual connections (g=%d, s=%d, d=%d)\n", i, t.gate, t.source, t.drain);
             }
          }
-         int gate = t.gate;
          if (t.depletion) {
-            printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? forcing gate to VCC in netlist\n", i, t.gate, t.source, t.drain);
-            gate = SIG_VCC;
+            printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? replacing signal %d with ground in netlist\n", i, t.gate, t.source, t.drain, t.drain);
+            // All the traps have a grounded source
+            force_to_ground.push_back(t.drain);
+            continue;
          }
          int sx = t.x;
          while (pombuf[t.y * size_x + sx] & TRANSISTORS) {
@@ -1210,7 +1216,25 @@ void write_transdefs_file() {
          while (pombuf[sy * size_x + t.x] & TRANSISTORS) {
             sy++;
          }
-         ::fprintf(trfile, "['t%d',%d,%d,%d,", i, gate, t.source, t.drain);
+         int gate   = t.gate;
+         int source = t.source;
+         int drain  = t.drain;
+         for (int j = 0; j < force_to_ground.size(); j++) {
+            int trap = force_to_ground[j];
+            if (gate == trap ) {
+               gate = SIG_GND;
+               printf("Forcing gate to ground on transistor %d due to trap\n", i);
+            }
+            if (source == trap) {
+               source = SIG_GND;
+               printf("Forcing source to ground on transistor %d due to trap\n", i);
+            }
+            if (drain == trap) {
+               drain = SIG_GND;
+               printf("Forcing drain to ground on transistor %d due to trap\n", i);
+            }
+         }
+         ::fprintf(trfile, "['t%d',%d,%d,%d,", i, gate, source, drain);
          ::fprintf(trfile, "[%d,%d,%d,%d],", t.x, sx, size_y - sy - 1, size_y - t.y - 1);
          ::fprintf(trfile, "[%d,%d,%d,%d,%d],%s,],\n", 1, 1, 1, 1, (int) t.area, (weak ? "true" : "false"));
       } else {
@@ -1503,86 +1527,106 @@ int main(int argc, char *argv[])
 
    // Simulated Z80 program
 
+   int mem_addr = 0;
+
    // 0x00,                    // NOP
+   // 0x31, 0x00, 0x01,        // LD SP,0x0100
+   // 0xCD, 0x0B, 0x00,        // CALL $000B
+   // 0x00,                    // NOP
+   // 0x21, 0x78, 0x56,        // LD HL,$5678
+   // 0x21, 0x34, 0x12,        // LD HL,$1234
+   // 0xe5,                    // PUSH HL
+   // 0x00,                    // NOP
+   // 0x00,                    // NOP
+
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x31;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x01;
+   memory[mem_addr++] = 0xcd;
+   memory[mem_addr++] = 0x0b;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x21;
+   memory[mem_addr++] = 0x78;
+   memory[mem_addr++] = 0x56;
+   memory[mem_addr++] = 0x21;
+   memory[mem_addr++] = 0x34;
+   memory[mem_addr++] = 0x12;
+   memory[mem_addr++] = 0xe5;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x00;
+
    // 0x3C,                    // INC A
    // 0x04,                    // INC B
-   // 0x14,                    // INC D
+   // 0x15,                    // DEC D
    // 0x24,                    // INC H
    // 0xEB,                    // EXX DE,HL
    // 0x00,                    // NOP
    // 0x3C,                    // INC A
    // 0x04,                    // INC B
-   // 0x14,                    // INC D
+   // 0x15,                    // DEC D
    // 0x24,                    // INC H
    // 0xD9,                    // EXX
    // 0x00,                    // NOP
    // 0x3C,                    // INC A
    // 0x04,                    // INC B
-   // 0x14,                    // INC D
+   // 0x15,                    // DEC D
    // 0x24,                    // INC H
    // 0xEB,                    // EXX DE,HL
    // 0x00,                    // NOP
    // 0x3C,                    // INC A
    // 0x04,                    // INC B
-   // 0x14,                    // INC D
+   // 0x15,                    // DEC D
    // 0x24,                    // INC H
    // 0x08,                    // EXX AF,AF'
    // 0x00,                    // NOP
    // 0x3C,                    // INC A
    // 0x04,                    // INC B
-   // 0x14,                    // INC D
+   // 0x15,                    // DEC D
    // 0x24,                    // INC H
    // 0x00,                    // NOP
    // 0x00,                    // NOP
    // 0x00,                    // NOP
-   // 0x21, 0x00, 0x01,        // LD HL,$0100
-   // 0x36, 0xCC,              // LD (HL),$CC
-   // 0x00,                    // NOP
-   // 0x7E,                    // LD A, (HL)
-   // 0x00,                    // NOP
-   // 0x21, 0x34, 0x12,        // LD HL,$1234
-   // 0x31, 0xfe, 0xdc,        // LD SP,0xDCFE
-   // 0xe5,                    // PUSH HL
-   // 0x21, 0x78, 0x56,        // LD HL,$5678
-   // 0xe3,                    // EX (SP),HL
-   // 0xdd, 0x21, 0xbc,0x9a,   // LD IX, 0x9ABC
-   // 0xdd, 0xe3,              // EX (SP),IX
-   // 0x76                     // HALT
 
-   int mem_addr = 0;
-
-   memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x3C;
    memory[mem_addr++] = 0x04;
-   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x15;
    memory[mem_addr++] = 0x24;
    memory[mem_addr++] = 0xEB;
    memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x3C;
    memory[mem_addr++] = 0x04;
-   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x15;
    memory[mem_addr++] = 0x24;
    memory[mem_addr++] = 0xD9;
    memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x3C;
    memory[mem_addr++] = 0x04;
-   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x15;
    memory[mem_addr++] = 0x24;
    memory[mem_addr++] = 0xEB;
    memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x3C;
    memory[mem_addr++] = 0x04;
-   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x15;
    memory[mem_addr++] = 0x24;
    memory[mem_addr++] = 0x08;
    memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x3C;
    memory[mem_addr++] = 0x04;
-   memory[mem_addr++] = 0x14;
+   memory[mem_addr++] = 0x15;
    memory[mem_addr++] = 0x24;
    memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x00;
+
+   // 0x21, 0x00, 0x01,        // LD HL,$0100
+   // 0x36, 0xCC,              // LD (HL),$CC
+   // 0x00,                    // NOP
+   // 0x7E,                    // LD A, (HL)
+   // 0x00,                    // NOP
+
    memory[mem_addr++] = 0x21;
    memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x01;
@@ -1591,6 +1635,18 @@ int main(int argc, char *argv[])
    memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x7e;
    memory[mem_addr++] = 0x00;
+
+   // Pavel's original test program
+   // 0x21, 0x34, 0x12,        // LD HL,$1234
+   // 0x31, 0xfe, 0xdc,        // LD SP,0xDCFE
+   // 0xe5,                    // PUSH HL
+   // 0x21, 0x78, 0x56,        // LD HL,$5678
+   // 0xe3,                    // EX (SP),HL
+   // 0xdd, 0x21, 0xbc,0x9a,   // LD IX, 0x9ABC
+   // 0xdd, 0xe3,              // EX (SP),IX
+   // 0x76,                    // HALT
+   // 0x00                     // NOP
+
    memory[mem_addr++] = 0x21;
    memory[mem_addr++] = 0x34;
    memory[mem_addr++] = 0x12;
@@ -1609,6 +1665,9 @@ int main(int argc, char *argv[])
    memory[mem_addr++] = 0xdd;
    memory[mem_addr++] = 0xe3;
    memory[mem_addr++] = 0x76;
+   memory[mem_addr++] = 0x00;
+
+   printf("Test program contains %d bytes\n", mem_addr);
 
    if (argc < 2)
    {
@@ -2835,8 +2894,7 @@ int main(int argc, char *argv[])
    delete signals_poly;
    delete signals_metal;
 
-
-   ::exit(1);
+   // ::exit(1);
 
    // ======================================================================
    // ============================= Simulation =============================
