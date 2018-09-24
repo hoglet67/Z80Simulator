@@ -18,7 +18,7 @@ std::map<int,int> Map_0ADL, Map_H1x1;
 //////////////////////////////////////////////////////////////////////////////
 // Simple gates encoded by height of transistor stack
 
-char *Gates[] = {
+const char *Gates[] = {
     "~2222",
     "~2221",
     "~222",
@@ -46,7 +46,7 @@ const int NumGates = sizeof(Gates)/sizeof(char*);
 
 //////////////////////////////////////////////////////////////////////////////
 
-void GatePorts(INTERFACE1 *sub, char *p) {
+void GatePorts(INTERFACE1 *sub, const char *p) {
     for (int x=0; p[x]; x++) {
         if (p[x]=='1') {
             sub->AddPort(100+x, TT_IN);
@@ -58,7 +58,7 @@ void GatePorts(INTERFACE1 *sub, char *p) {
     }
 }
 
-void GateLogic(INTERFACE2 *sub, char *p) {
+void GateLogic(INTERFACE2 *sub, const char *p) {
     sub->AddPull(300);
     for (int x=0; p[x]; x++) {
         if (p[x]=='1') {
@@ -71,7 +71,7 @@ void GateLogic(INTERFACE2 *sub, char *p) {
     }
 }
 
-void GateVerilog(INTERFACE1 *sub, char *p, FILE *fp) {
+void GateVerilog(INTERFACE1 *sub, const char *p, FILE *fp) {
     for (int x=0; p[x]; x++) {
         if (x) fputc('|', fp);
         if (p[x]=='1')
@@ -81,7 +81,7 @@ void GateVerilog(INTERFACE1 *sub, char *p, FILE *fp) {
     }
 }
 
-void GateLogic(GRAPH *sub, char *p, int ord, int inv) { // 2nd pass
+void GateLogic(GRAPH *sub, const char *p, int ord, int inv) { // 2nd pass
     // Inverter
     sub->AddDevice(inv, 500);
     sub->AddTerminal(300, TT_OUT);
@@ -103,7 +103,7 @@ void GateLogic(GRAPH *sub, char *p, int ord, int inv) { // 2nd pass
 //////////////////////////////////////////////////////////////////////////////
 // Define sub-circuits
 
-char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
+const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
     int idx=VT_MODULE_BASE;
 
     INTERFACE1 *sub1 = (INTERFACE1*) sub;
@@ -1045,9 +1045,8 @@ char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
         }
         return "Datapath bitslice";
     }
-
     if (ord<idx+NumGates) {
-        char *p = Gates[ord-idx];
+        const char *p = Gates[ord-idx];
         switch (cmd) {
             case CMD_VERILOG:
                 if (sub1->GetKeep(300)==0) break;
@@ -1071,7 +1070,7 @@ char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
         idx+=NumGates;
 
     if (ord<idx+10) {
-        char *p = Gates[ord-idx+NumGates-10];
+        const char *p = Gates[ord-idx+NumGates-10];
         switch (cmd) {
             case CMD_VERILOG:
                 if (sub1->GetKeep(300)==0) break;
@@ -1126,7 +1125,7 @@ char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
                 sub2->AddTran(201, 101, 102, 103);
                 break;
             case CMD_0ADL_H1x1:
-                if (sub1->GetMate(101) != NODE_H1x1) error();
+                if (sub1->GetMate(101) != NODE_H1x1) error(20);
                 Map_H1x1[sub1->GetMate(102)] = sub1->GetMate(103);
                 Map_H1x1[sub1->GetMate(103)] = sub1->GetMate(102);
         }

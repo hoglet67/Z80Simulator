@@ -1,5 +1,7 @@
 #pragma warning(disable:4786)
 
+#include <stdlib.h>
+
 #include <iterator>
 #include <list>
 #include <map>
@@ -15,7 +17,7 @@ struct SPECIAL_NET : BASE { // Vcc, Vss, cp1, cp2
         label = node; // Never re-labelled
     }
     ~SPECIAL_NET() {
-        if (edges) error();
+        if (edges) error(10);
     }
     void AppendEdge(BASE *, int) {edges++;}
     void RemoveEdge(BASE *)      {edges--;}
@@ -43,8 +45,10 @@ struct DEVICE : VERT {
 //////////////////////////////////////////////////////////////////////////////
 // Saving and restore vertex states around recursive call in phase 2
 
+#define TYPE int64_t
+
 struct STATE {
-    int *data[4];
+    TYPE *data[4];
     void Capture(GRAPH**);
     void Restore(GRAPH**);
     STATE()  {int i; for (i=0; i<4; i++) data[i]=0;}
@@ -57,11 +61,11 @@ void STATE::Capture(GRAPH *g[]) {
     for (i=0; i<4; i++) {
         l = g[i/2]->list[i%2];
         for (j=0, v=l; v; v=v->next) j++;
-        data[i] = new int [j*3];
+        data[i] = new TYPE [j*3];
         for (j=0, v=l; v; v=v->next) {
             data[i][j++] = v->safe;
             data[i][j++] = v->label;
-            data[i][j++] = (int) v->mate;
+            data[i][j++] = (TYPE) v->mate;
         }
     }
 }
@@ -82,7 +86,7 @@ void STATE::Restore(GRAPH *g[]) {
 // Vertices
 
 void VERT::AppendEdge(BASE *neighbour, int term_type) {
-    if (degree==MAX_EDGES) error();
+    if (degree==MAX_EDGES) error(11);
     term_types[degree]   = term_type;
     neighbours[degree++] = neighbour;
 }
@@ -95,7 +99,7 @@ void VERT::RemoveEdge(BASE *neighbour) {
         }
         return;
     }
-    error();
+    error(12);
 }
 
 void VERT::RemoveVertex(VERT **lnk) {
@@ -175,7 +179,7 @@ void GRAPH::AddSpecials() {
 
 void GRAPH::DeleteSpecial(BASE *net) {
     if (net->IsSpecial()) delete net;
-    else error();
+    else error(13);
 }
 
 void GRAPH::DeleteSpecials() {

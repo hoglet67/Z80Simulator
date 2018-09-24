@@ -1,7 +1,12 @@
 #pragma warning(disable:4786)
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <set>
+#include <inttypes.h>
+
+#define __int64 int64_t
 
 #include "SubGem.h"
 
@@ -32,8 +37,8 @@ int Required[] = {
 
 int Instances;
 
-void error() {
-    fprintf(stderr, "ERROR\n");
+void error(int i) {
+   fprintf(stderr, "ERROR %d\n", i);
     exit(-1);
 }
 
@@ -57,14 +62,15 @@ private:
 
 void LoadNetlist(GRAPH& cpu) {
     char s[200];
-    int i, tran, gate, node, ch=0, chan[2];
+    char ch = 0;
+    int i, tran, gate, node, chan[2];
     TRAN_SET ts;
 
-    FILE *fp = fopen("../../../Netlist/transdefs.js", "r");
-    if (!fp) error();
+    FILE *fp = fopen("transdefs.js", "r");
+    if (!fp) error(1);
     for (i=0; i<NUM_TRANS; i++) {
         for (;;) {
-            if (!fgets(s, sizeof s, fp)) error();
+            if (!fgets(s, sizeof s, fp)) error(2);
             if (sscanf(s, "['t%d',%d,%d,%d,", &tran, &gate, chan+0, chan+1)==4) break;
         }
         if (gate==NODE_vss && (chan[0]==NODE_cp2 || chan[1]==NODE_cp2)) continue; // Termination?
@@ -77,18 +83,18 @@ void LoadNetlist(GRAPH& cpu) {
     char *pulls = new char[NUM_NODES];
     memset(pulls, 0, NUM_NODES);
 
-    fp = fopen("../../../Netlist/segdefs.js", "r");
-    if (!fp) error();
+    fp = fopen("segdefs.js", "r");
+    if (!fp) error(3);
     for (;;) {
-        if (!fgets(s, sizeof s, fp)) error();
+        if (!fgets(s, sizeof s, fp)) error(4);
         if (!strcmp(s, "var segdefs = [\n")) break;
     }
     for (;;) {
         if (!fgets(s, 10, fp)) return;
         if (s[0]==']') break;
-        if (sscanf(s, "[%d,'%c',", &node, &ch)!=2) error();
-        if (node<0 || node>=NUM_NODES) error();
-        if (ch=='+') pulls[node]=1; else if (ch!='-') error();
+        if (sscanf(s, "[%d,'%c',", &node, &ch)!=2) error(5);
+        if (node<0 || node>=NUM_NODES) error(6);
+        if (ch=='+') pulls[node]=1; else if (ch!='-') error(7);
         while (!feof(fp) && fgetc(fp)!='\n');
     }
     fclose(fp);
@@ -112,7 +118,7 @@ void LoadNetlist(GRAPH& cpu) {
 //////////////////////////////////////////////////////////////////////////////
 // Optimise inverters/buffers
 
-struct {
+struct _Net {
     int src, inv, opt, rqd;
 }
 Net[NUM_NODES];
@@ -238,7 +244,7 @@ void DumpLatches(GRAPH& cpu, FILE *fp) {
 
     for (t=cpu.list[LST_DEVS]; t; t=t->next) if (t->type==VT_EFET) {
         g = t->neighbours[0];
-        if (!g->IsSpecial()) error();
+        if (!g->IsSpecial()) error(8);
         c[0] = (VERT*) t->neighbours[1];
         c[1] = (VERT*) t->neighbours[2];
         r = Floatable(c[1]);
@@ -270,7 +276,7 @@ void Stats(GRAPH& cpu) {
 
 //////////////////////////////////////////////////////////////////////////////
 
-void main() {
+int main() {
     GRAPH cpu;
     FILE *fp;
 
@@ -291,4 +297,5 @@ void main() {
     fclose(fp);
 
     //Stats(cpu);
+    return 0;
 }

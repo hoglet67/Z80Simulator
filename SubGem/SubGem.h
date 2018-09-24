@@ -130,4 +130,4 @@ struct GRAPH : INTERFACE2 {
 
 int Replace(GRAPH& cpu, GRAPH& sub, int ord);
 
-void error();
+void error(int i);
