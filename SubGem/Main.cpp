@@ -10,8 +10,8 @@
 
 #include "SubGem.h"
 
-#define NUM_TRANS 3510
-#define NUM_NODES 1725
+#define NUM_TRANS 6810
+#define NUM_NODES 3599
 
 char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp);
 
@@ -19,16 +19,6 @@ char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp);
 // These nodes must not be removed by inverter/buffer optimisation
 
 int Required[] = {
-   1156, // rw
-   539, // sync
-   1005, // db0
-   82, // db1
-   650, // db3
-   945, // db2
-   175, // db5
-   1393, // db4
-   1349, // db7
-   1591, // db6
    0
 };
 
@@ -73,7 +63,7 @@ void LoadNetlist(GRAPH& cpu) {
          if (!fgets(s, sizeof s, fp)) error(2);
          if (sscanf(s, "['t%d',%d,%d,%d,", &tran, &gate, chan+0, chan+1)==4) break;
       }
-      if (gate==NODE_vss && (chan[0]==NODE_cp2 || chan[1]==NODE_cp2)) continue; // Termination?
+//      if (gate==NODE_vss && (chan[0]==NODE_cp2 || chan[1]==NODE_cp2)) continue; // Termination?
       if (chan[0]==chan[1]) continue; // Miller slow-down capacitors on db2, db4, db6
       if (ts.UniqueTran(gate, chan[0], chan[1])==false) continue; // Parallel
       cpu.AddTran(tran, gate, chan[0], chan[1]);
@@ -286,14 +276,14 @@ int main() {
 
    fp = fopen("logic_unopt.inc", "w"); // For simulation
    DumpModules(cpu, fp);
-   DumpLatches(cpu, fp);
+   //DumpLatches(cpu, fp);
    fclose(fp);
 
    OptimiseBuffers(cpu);// Remove buffers and inverters
 
    fp = fopen("logic.inc", "w"); // For synthesis
    DumpModules(cpu, fp);
-   DumpLatches(cpu, fp);
+   //DumpLatches(cpu, fp);
    fclose(fp);
 
    //Stats(cpu);

@@ -10,7 +10,7 @@
 
 //////////////////////////////////////////////////////////////////////////////
 
-struct SPECIAL_NET : BASE { // Vcc, Vss, cp1, cp2
+struct SPECIAL_NET : BASE { // Vcc, Vss, clk
    int edges;
    SPECIAL_NET(int node) : edges(0) {
       valid = true; // safe = true
@@ -173,8 +173,7 @@ void GRAPH::AddSpecial(int node) {
 void GRAPH::AddSpecials() {
    AddSpecial(NODE_vcc);
    AddSpecial(NODE_vss);
-   AddSpecial(NODE_cp1);
-   AddSpecial(NODE_cp2);
+   AddSpecial(NODE_clk);
 }
 
 void GRAPH::DeleteSpecial(BASE *net) {
@@ -185,8 +184,7 @@ void GRAPH::DeleteSpecial(BASE *net) {
 void GRAPH::DeleteSpecials() {
    DeleteSpecial(net_idx[NODE_vcc]);
    DeleteSpecial(net_idx[NODE_vss]);
-   DeleteSpecial(net_idx[NODE_cp1]);
-   DeleteSpecial(net_idx[NODE_cp2]);
+   DeleteSpecial(net_idx[NODE_clk]);
 }
 
 void GRAPH::AddPull(int node) {

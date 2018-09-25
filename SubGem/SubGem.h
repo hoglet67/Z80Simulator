@@ -8,10 +8,9 @@ extern int Instances;
 //////////////////////////////////////////////////////////////////////////////
 
 enum SPECIAL_NODES {
-   NODE_vcc = 657,
-   NODE_vss = 558,
-   NODE_cp1 = 710, // phi1
-   NODE_cp2 = 943  // phi2 a.k.a cclk
+   NODE_vcc = 2,
+   NODE_vss = 1,
+   NODE_clk = 3
 };
 
 enum VERTEX_TYE {

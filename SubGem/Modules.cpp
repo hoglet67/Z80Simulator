@@ -11,26 +11,35 @@ void UnaryBuf(int, int);
 
 int GetRoot(char *, int);
 
+#if 0
 const int NODE_H1x1 = 1042;
 
 std::map<int,int> Map_0ADL, Map_H1x1;
+#endif
 
 //////////////////////////////////////////////////////////////////////////////
 // Simple gates encoded by height of transistor stack
 
 const char *Gates[] = {
-   "~2222",
    "~2221",
    "~222",
-   "~2211111",
+   "~221",
    "~22",
-   "~2111111",
    "~211111",
    "~21111",
    "~2111",
    "~211",
    "~21",
    "~2",
+   "~111111111111111111",
+   "~11111111111111111",
+   "~1111111111111111",
+   "~111111111111111",
+   "~11111111111111",
+   "~1111111111111",
+   "~111111111111",
+   "~11111111111",
+   "~1111111111",
    "~111111111",
    "~11111111",
    "~1111111",
@@ -41,6 +50,8 @@ const char *Gates[] = {
    "~11",
    "~1"
 };
+
+#define NUM_NOR 18
 
 const int NumGates = sizeof(Gates)/sizeof(char*);
 
@@ -109,6 +120,106 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
    INTERFACE1 *sub1 = (INTERFACE1*) sub;
    INTERFACE2 *sub2 = (INTERFACE2*) sub;
 
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_IN);
+         sub1->AddPort(101, TT_IN);
+         sub1->AddPort(102, TT_IN);
+         sub1->AddPort(103, TT_IN);
+         sub1->AddPort(104, TT_IN);
+         sub1->AddPort(105, TT_IN);
+         sub1->AddPort(106, TT_IN);
+         sub1->AddPort(107, TT_IN);
+         sub1->AddPort(108, TT_OUT);
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(108);
+         sub2->AddTran(207, 107, 108, 116);
+         sub2->AddTran(206, 106, 116, 115);
+         sub2->AddTran(205, 105, 115, 114);
+         sub2->AddTran(204, 104, 114, 113);
+         sub2->AddTran(203, 103, 113, 112);
+         sub2->AddTran(202, 102, 112, 111);
+         sub2->AddTran(201, 101, 111, 110);
+         sub2->AddTran(200, 100, 110, NODE_vss);
+      }
+      return "AND8";
+   }
+
+
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_IN);  // A
+         sub1->AddPort(101, TT_IN);  // B
+         sub1->AddPort(102, TT_OUT); // out
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(110);
+         sub2->AddPull(111);
+         sub2->AddPull(112);
+         sub2->AddPull(102);
+         sub2->AddTran(200, 100, 110, NODE_vss);
+         sub2->AddTran(201, 101, 111, NODE_vss);
+         sub2->AddTran(202, 110, 111, 112);
+         sub2->AddTran(203, 111, 110, 112);
+         sub2->AddTran(204, 112, 102, NODE_vss);
+      }
+      return "XOR2";
+   }
+
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_IN);  // A
+         sub1->AddPort(101, TT_IN);  // B
+         sub1->AddPort(102, TT_OUT); // out
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(110);
+         sub2->AddPull(111);
+         sub2->AddPull(102);
+         sub2->AddTran(200, 100, 110, NODE_vss);
+         sub2->AddTran(201, 101, 111, NODE_vss);
+         sub2->AddTran(202, 110, 111, 102);
+         sub2->AddTran(203, 111, 110, 102);
+      }
+      return "XNOR2";
+   }
+
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_OUT); // bus +
+         sub1->AddPort(101, TT_OUT); // bus -
+         sub1->AddPort(102, TT_IN);  // select
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(110);
+         sub2->AddPull(111);
+         sub2->AddTran(200, 111, 110, NODE_vss);
+         sub2->AddTran(201, 110, 111, NODE_vss);
+         sub2->AddTran(202, 102, 100, 110);
+         sub2->AddTran(203, 102, 101, 111);
+      }
+      return "Register bit";
+   }
+   
+   
+#if 0
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
@@ -643,6 +754,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "~(1.3+2.3) (shorted inputs)";
    }
+#endif
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
@@ -755,6 +867,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "~(5.(2+1.3) + 4.6)";
    }
+#if 0
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
@@ -831,6 +944,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "~cp2";
    }
+#endif
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
@@ -853,6 +967,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "~((1+2+3).4)";
    }
+#if 0
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
@@ -1045,6 +1160,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "Datapath bitslice";
    }
+#endif
    if (ord<idx+NumGates) {
       const char *p = Gates[ord-idx];
       switch (cmd) {
@@ -1069,8 +1185,8 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
    else
       idx+=NumGates;
 
-   if (ord<idx+10) {
-      const char *p = Gates[ord-idx+NumGates-10];
+   if (ord<idx+NUM_NOR) {
+      const char *p = Gates[ord-idx+NumGates-NUM_NOR];
       switch (cmd) {
       case CMD_VERILOG:
          if (sub1->GetKeep(300)==0) break;
@@ -1086,13 +1202,14 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
          GatePorts(sub1, p+1);
          break;
       case CMD_LOGIC:
-         GateLogic((GRAPH*)sub, p+1, ord-10, idx-1);
+         GateLogic((GRAPH*)sub, p+1, ord-NUM_NOR, idx-1);
       }
       return p+1;
    }
    else
-      idx+=10;
+      idx+=NUM_NOR;
 
+#if 0
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
@@ -1131,6 +1248,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "H1x1";
    }
+#endif
 
    return 0;
 }

@@ -1,2 +1,2 @@
 #!/bin/bash
-g++ -O3 -o subgem Main.cpp Modules.cpp SubGem.cpp
+g++ -g -o subgem Main.cpp Modules.cpp SubGem.cpp
