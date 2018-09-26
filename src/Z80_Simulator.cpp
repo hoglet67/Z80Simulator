@@ -1732,6 +1732,70 @@ int main(int argc, char *argv[])
 
    // 0x00,                    // NOP
    // 0x31, 0x00, 0x01,        // LD SP,0x0100
+   // 0xaf,                    // XOR A
+   // 0xee, 0xff,              // XOR A, 0xFF
+   // 0x3e, 0x00,              // LD A, 0x00
+   // 0x00,                    // NOP
+   // 0x37,                    // SCF
+   // 0x00,                    // NOP
+   // 0x00,                    // NOP
+   // 0xf5,                    // PUSH AF
+   // 0xe1,                    // POP HL
+   // 0x00,                    // NOP
+   // 0x76,                    // HALT
+   // 0x00,                    // NOP
+
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x31;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x01;
+   memory[mem_addr++] = 0xaf;
+   memory[mem_addr++] = 0xee;
+   memory[mem_addr++] = 0xff;
+   memory[mem_addr++] = 0x3e;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x37;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0xf5;
+   memory[mem_addr++] = 0xe1;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x76;
+   memory[mem_addr++] = 0x00;
+   // 0x00,                    // NOP
+   // 0x31, 0x00, 0x01,        // LD SP,0x0100
+   // 0xaf,                    // XOR A
+   // 0x3e, 0xff,              // LD A, 0xFF
+   // 0x00,                    // NOP
+   // 0x37,                    // SCF
+   // 0x00,                    // NOP
+   // 0x00,                    // NOP
+   // 0xf5,                    // PUSH AF
+   // 0xe1,                    // POP HL
+   // 0x00,                    // NOP
+   // 0x76,                    // HALT
+   // 0x00,                    // NOP
+
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x31;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x01;
+   memory[mem_addr++] = 0xaf;
+   memory[mem_addr++] = 0x3e;
+   memory[mem_addr++] = 0xff;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x37;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0xf5;
+   memory[mem_addr++] = 0xe1;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x76;
+   memory[mem_addr++] = 0x00;
+
+   // 0x00,                    // NOP
+   // 0x31, 0x00, 0x01,        // LD SP,0x0100
    // 0xCD, 0x0B, 0x00,        // CALL $000B
    // 0x00,                    // NOP
    // 0x21, 0x78, 0x56,        // LD HL,$5678
