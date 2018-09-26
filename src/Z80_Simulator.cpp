@@ -154,6 +154,33 @@ int nextsignal;
 uint8_t memory[65536];
 uint8_t ports[256];
 
+
+// Globals for the names signals
+unsigned int reg_a[8], reg_f[8], reg_b[8], reg_c[8], reg_d[8], reg_e[8], reg_d2[8], reg_e2[8], reg_h[8], reg_l[8], reg_h2[8], reg_l2[8];
+unsigned int reg_w[8], reg_z[8], reg_pch[8], reg_pcl[8], reg_sph[8], reg_spl[8];
+unsigned int reg_ixh[8], reg_ixl[8], reg_iyh[8], reg_iyl[8], reg_i[8], reg_r[8];
+unsigned int reg_a2[8], reg_f2[8], reg_b2[8], reg_c2[8];
+
+unsigned int sig_t1;
+unsigned int sig_t2;
+unsigned int sig_t3;
+unsigned int sig_t4;
+unsigned int sig_t5;
+unsigned int sig_t6;
+
+unsigned int sig_m1;
+unsigned int sig_m2;
+unsigned int sig_m3;
+unsigned int sig_m4;
+unsigned int sig_m5;
+unsigned int sig_m6;
+
+unsigned int sig_ex_af;
+unsigned int sig_ex_bcdehl;
+unsigned int sig_ex_dehl0;
+unsigned int sig_ex_dehl1;
+unsigned int sig_ex_dehl_combined;
+
 // Connection to transistor remembers index of connected transistor and its terminal
 // proportion is the proportion of that transisor are to the area of all transistors connected
 // to the respective signal - it is here for optimalisation purposes
@@ -1155,123 +1182,9 @@ void SetupPad(int x, int y, int signalnum, int padtype)
 }
 
 
-void write_transdefs_file() {
-   // The format here is
-   //   name
-   //   gate,c1,c2
-   //   bb (bounding box: xmin, xmax, ymin, ymax)
-   //   geometry (unused) (width1, width2, length, #segments, area)
-   //   weak (boolean) (marks weak transistors, whether pullups or pass gates)
-   //
-
-   // Maintain a list of signals that should be forces to ground sue to traps
-   // (the depletion mode transistors are processed first, so two passes are not required)
-
-   vector<int> force_to_ground;
-
-   FILE* trfile = ::fopen("transdefs.js", "wb");
-   ::fputs("var transdefs = [\n", trfile);
-   for (unsigned int i = 0; i < transistors.size(); i++)
-   {
-      int weak = 0;
-      // ['t1',1646,13,663,[560,721,2656,2730],[415,415,11,5,4566],false],
-      Transistor t = transistors[i];
-      // Omit transistors that are pullups
-      if (t.source != t.gate || t.drain != SIG_VCC) {
-         if (t.drain == SIG_VCC && t.gate == SIG_VCC) {
-            printf("Warning: t%d is a enhancement pullup (g=%d, s=%d, d=%d) - marking as weak\n", i, t.gate, t.source, t.drain);
-            weak = 1;
-         } else {
-            if (t.source == SIG_GND && t.gate == SIG_GND) {
-               printf("Warning: t%d is a protection diode (g=%d, s=%d, d=%d) - excluding\n", i, t.gate, t.source, t.drain);
-               continue;
-            }
-            if (t.source == 0) {
-               printf("Warning: t%d has disconnected source (area = %d) - excluding\n", i, (int) t.area);
-               continue;
-            }
-            if (t.drain == 0) {
-               printf("Warning: t%d has disconnected drain (area = %d) - excluding\n", i, (int) t.area);
-               continue;
-            }
-            if (t.gate == 0) {
-               printf("Warning: t%d has disconnected gate (area = %d) - excluding\n", i, (int) t.area);
-               continue;
-            }
-            if (t.source == t.gate || t.source == t.drain || t.gate == t.drain) {
-               printf("Warning: t%d has unusual connections (g=%d, s=%d, d=%d)\n", i, t.gate, t.source, t.drain);
-            }
-         }
-         if (t.depletion) {
-            printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? replacing signal %d with ground in netlist\n", i, t.gate, t.source, t.drain, t.drain);
-            // All the traps have a grounded source
-            force_to_ground.push_back(t.drain);
-            continue;
-         }
-         int sx = t.x;
-         while (pombuf[t.y * size_x + sx] & TRANSISTORS) {
-            sx++;
-         }
-         int sy = t.y;
-         while (pombuf[sy * size_x + t.x] & TRANSISTORS) {
-            sy++;
-         }
-         int gate   = t.gate;
-         int source = t.source;
-         int drain  = t.drain;
-         for (int j = 0; j < force_to_ground.size(); j++) {
-            int trap = force_to_ground[j];
-            if (gate == trap ) {
-               gate = SIG_GND;
-               printf("Forcing gate to ground on transistor %d due to trap\n", i);
-            }
-            if (source == trap) {
-               source = SIG_GND;
-               printf("Forcing source to ground on transistor %d due to trap\n", i);
-            }
-            if (drain == trap) {
-               drain = SIG_GND;
-               printf("Forcing drain to ground on transistor %d due to trap\n", i);
-            }
-         }
-         ::fprintf(trfile, "['t%d',%d,%d,%d,", i, gate, source, drain);
-         ::fprintf(trfile, "[%d,%d,%d,%d],", t.x, sx, size_y - sy - 1, size_y - t.y - 1);
-         ::fprintf(trfile, "[%d,%d,%d,%d,%d],%s,],\n", 1, 1, 1, 1, (int) t.area, (weak ? "true" : "false"));
-      } else {
-         if (!t.depletion) {
-            printf("Warning: t%d is not depletion mode and is being excluded\n", i);
-         }
-      }
-   }
-   ::fputs("]\n", trfile);
-   ::fclose(trfile);
-}
-
-
-void write_segdefs_file_simple() {
-   FILE* segfile = ::fopen("segdefs.js", "wb");
-   ::fputs("var segdefs = [\n", segfile);
-   for (unsigned int i = 0; i < signals.size(); i++)
-   {
-      // [   0,'+',1,5391,8260,5391,8216,5357,8216,5357,8260],
-      int pullup = '-';
-      if (i != SIG_GND || i != SIG_VCC) {
-         // Work out if signal is a depletion
-         for (unsigned int j = 0; j < signals[i].connections.size(); j++) {
-            Transistor t = transistors[signals[i].connections[j].index];
-            if (t.source == i && t.gate == i && t.drain == SIG_VCC) {
-               pullup = '+';
-               if (!t.depletion) {
-                  printf("Warning: sig %d / transistor %d expected to be depletion\n", i, j);
-               }
-            }
-         }
-      }
-      ::fprintf(segfile, "[ %d,'%c',1],\n", i, pullup);
-   }
-   ::fputs("]\n", segfile);
-   ::fclose(segfile);
-}
+// ===============================================================
+// Netlist generation methods
+// ===============================================================
 
 #define CONSTRAINT_NONE     0
 #define CONSTRAINT_GND      1
@@ -1428,8 +1341,6 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
    }
 }
 
-
-
 void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constraint) {
    // Segment the image into two halves, which is good enough to break up any very
    // large shapes that contain holes. This is a bit of a cludge, but simple boundary
@@ -1490,7 +1401,19 @@ void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constrai
 }
 
 
-void  write_segdefs_file() {
+void write_segdefs_file(string filename) {
+   FILE* segfile = ::fopen(filename.c_str(), "wb");
+   ::fputs("var segdefs = [\n", segfile);
+   write_layer_segments(segfile, 0, signals_metal, CONSTRAINT_NONE);
+   write_layer_segments(segfile, 1, signals_diff,  CONSTRAINT_SWITCHED);
+   write_layer_segments(segfile, 3, signals_diff,  CONSTRAINT_GND);
+   write_layer_segments(segfile, 4, signals_diff,  CONSTRAINT_VCC);
+   write_layer_segments(segfile, 5, signals_poly,  CONSTRAINT_NONE);
+   ::fputs("]\n", segfile);
+   ::fclose(segfile);
+}
+
+void update_pullup_status() {
    // First, work out whether each signal needs to be marked with a depletion pullup
    for (unsigned int i = FIRST_SIGNAL; i < signals.size(); i++) {
       // Work out if signal is a depletion
@@ -1504,18 +1427,296 @@ void  write_segdefs_file() {
          }
       }
    }
-
-   FILE* segfile = ::fopen("segdefs.js", "wb");
-   ::fputs("var segdefs = [\n", segfile);
-   write_layer_segments(segfile, 0, signals_metal, CONSTRAINT_NONE);
-   write_layer_segments(segfile, 1, signals_diff,  CONSTRAINT_SWITCHED);
-   write_layer_segments(segfile, 3, signals_diff,  CONSTRAINT_GND);
-   write_layer_segments(segfile, 4, signals_diff,  CONSTRAINT_VCC);
-   write_layer_segments(segfile, 5, signals_poly,  CONSTRAINT_NONE);
-   ::fputs("]\n", segfile);
-   ::fclose(segfile);
 }
 
+void output_nodenames(FILE *file, string padstr, string sepstr) {
+   const char *pad = padstr.c_str();
+   const char *sep = sepstr.c_str();
+   ::fprintf(file, "%svss%s %d,\n", pad, sep, SIG_GND);
+   ::fprintf(file, "%svcc%s %d,\n", pad, sep, SIG_VCC);
+   ::fprintf(file, "%sclk%s %d,\n", pad, sep, PAD_CLK);
+   ::fprintf(file, "%sab0%s %d,\n", pad, sep, PAD_A0);
+   ::fprintf(file, "%sab1%s %d,\n", pad, sep, PAD_A1);
+   ::fprintf(file, "%sab2%s %d,\n", pad, sep, PAD_A2);
+   ::fprintf(file, "%sab3%s %d,\n", pad, sep, PAD_A3);
+   ::fprintf(file, "%sab4%s %d,\n", pad, sep, PAD_A4);
+   ::fprintf(file, "%sab5%s %d,\n", pad, sep, PAD_A5);
+   ::fprintf(file, "%sab6%s %d,\n", pad, sep, PAD_A6);
+   ::fprintf(file, "%sab7%s %d,\n", pad, sep, PAD_A7);
+   ::fprintf(file, "%sab8%s %d,\n", pad, sep, PAD_A8);
+   ::fprintf(file, "%sab9%s %d,\n", pad, sep, PAD_A9);
+   ::fprintf(file, "%sab10%s %d,\n", pad, sep, PAD_A10);
+   ::fprintf(file, "%sab11%s %d,\n", pad, sep, PAD_A11);
+   ::fprintf(file, "%sab12%s %d,\n", pad, sep, PAD_A12);
+   ::fprintf(file, "%sab13%s %d,\n", pad, sep, PAD_A13);
+   ::fprintf(file, "%sab14%s %d,\n", pad, sep, PAD_A14);
+   ::fprintf(file, "%sab15%s %d,\n", pad, sep, PAD_A15);
+   ::fprintf(file, "%s_reset%s %d,\n", pad, sep, PAD__RESET);
+   ::fprintf(file, "%s_wait%s %d,\n", pad, sep, PAD__WAIT);
+   ::fprintf(file, "%s_int%s %d,\n", pad, sep, PAD__INT);
+   ::fprintf(file, "%s_nmi%s %d,\n", pad, sep, PAD__NMI);
+   ::fprintf(file, "%s_busrq%s %d,\n", pad, sep, PAD__BUSRQ);
+   ::fprintf(file, "%s_m1%s %d,\n", pad, sep, PAD__M1);
+   ::fprintf(file, "%s_rd%s %d,\n", pad, sep, PAD__RD);
+   ::fprintf(file, "%s_wr%s %d,\n", pad, sep, PAD__WR);
+   ::fprintf(file, "%s_mreq%s %d,\n", pad, sep, PAD__MREQ);
+   ::fprintf(file, "%s_iorq%s %d,\n", pad, sep, PAD__IORQ);
+   ::fprintf(file, "%s_rfsh%s %d,\n", pad, sep, PAD__RFSH);
+   ::fprintf(file, "%sdb0%s %d,\n", pad, sep, PAD_D0);
+   ::fprintf(file, "%sdb1%s %d,\n", pad, sep, PAD_D1);
+   ::fprintf(file, "%sdb2%s %d,\n", pad, sep, PAD_D2);
+   ::fprintf(file, "%sdb3%s %d,\n", pad, sep, PAD_D3);
+   ::fprintf(file, "%sdb4%s %d,\n", pad, sep, PAD_D4);
+   ::fprintf(file, "%sdb5%s %d,\n", pad, sep, PAD_D5);
+   ::fprintf(file, "%sdb6%s %d,\n", pad, sep, PAD_D6);
+   ::fprintf(file, "%sdb7%s %d,\n", pad, sep, PAD_D7);
+   ::fprintf(file, "%s_halt%s %d,\n", pad, sep, PAD__HALT);
+   ::fprintf(file, "%s_busak%s %d,\n", pad, sep, PAD__BUSAK);
+
+   ::fprintf(file, "%st1%s %d,\n", pad, sep,  FindSignalX(sig_t1));
+   ::fprintf(file, "%st2%s %d,\n", pad, sep,  FindSignalX(sig_t2));
+   ::fprintf(file, "%st3%s %d,\n", pad, sep,  FindSignalX(sig_t3));
+   ::fprintf(file, "%st4%s %d,\n", pad, sep,  FindSignalX(sig_t4));
+   ::fprintf(file, "%st5%s %d,\n", pad, sep,  FindSignalX(sig_t5));
+   ::fprintf(file, "%st6%s %d,\n", pad, sep,  FindSignalX(sig_t6));
+   ::fprintf(file, "%sm1%s %d,\n", pad, sep,  FindSignalX(sig_m1));
+   ::fprintf(file, "%sm2%s %d,\n", pad, sep,  FindSignalX(sig_m2));
+   ::fprintf(file, "%sm3%s %d,\n", pad, sep,  FindSignalX(sig_m3));
+   ::fprintf(file, "%sm4%s %d,\n", pad, sep,  FindSignalX(sig_m4));
+   ::fprintf(file, "%sm5%s %d,\n", pad, sep,  FindSignalX(sig_m5));
+   ::fprintf(file, "%sm6%s %d,\n", pad, sep,  FindSignalX(sig_m6));
+
+   ::fprintf(file, "%sex_af%s %d,\n", pad, sep,  FindSignalX(sig_ex_af));
+   ::fprintf(file, "%sex_bcdehl%s %d,\n", pad, sep,  FindSignalX(sig_ex_bcdehl));
+   ::fprintf(file, "%sex_dehl0%s %d,\n", pad, sep,  FindSignalX(sig_ex_dehl0));
+   ::fprintf(file, "%sex_dehl1%s %d,\n", pad, sep,  FindSignalX(sig_ex_dehl1));
+   ::fprintf(file, "%sex_dehl_combined%s %d,\n", pad, sep,  FindSignalX(sig_ex_dehl_combined));
+
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_a%d%s %d,\n",     pad, i, sep, FindSignal(reg_a[i]));
+      ::fprintf(file, "%sreg_f%d%s %d,\n",     pad, i, sep, FindSignal(reg_f[i]));
+      ::fprintf(file, "%sreg_b%d%s %d,\n",     pad, i, sep, FindSignal(reg_b[i]));
+      ::fprintf(file, "%sreg_c%d%s %d,\n",     pad, i, sep, FindSignal(reg_c[i]));
+      ::fprintf(file, "%sreg_d%d%s %d,\n",     pad, i, sep, FindSignal(reg_d[i]));
+      ::fprintf(file, "%sreg_e%d%s %d,\n",     pad, i, sep, FindSignal(reg_e[i]));
+      ::fprintf(file, "%sreg_h%d%s %d,\n",     pad, i, sep, FindSignal(reg_h[i]));
+      ::fprintf(file, "%sreg_l%d%s %d,\n",     pad, i, sep, FindSignal(reg_l[i]));
+      ::fprintf(file, "%sreg_w%d%s %d,\n",     pad, i, sep, FindSignal(reg_w[i]));
+      ::fprintf(file, "%sreg_z%d%s %d,\n",     pad, i, sep, FindSignal(reg_z[i]));
+      ::fprintf(file, "%sreg_pch%d%s %d,\n",   pad, i, sep, FindSignal(reg_pch[i]));
+      ::fprintf(file, "%sreg_pcl%d%s %d,\n",   pad, i, sep, FindSignal(reg_pcl[i]));
+      ::fprintf(file, "%sreg_sph%d%s %d,\n",   pad, i, sep, FindSignal(reg_sph[i]));
+      ::fprintf(file, "%sreg_spl%d%s %d,\n",   pad, i, sep, FindSignal(reg_spl[i]));
+      ::fprintf(file, "%sreg_ixh%d%s %d,\n",   pad, i, sep, FindSignal(reg_ixh[i]));
+      ::fprintf(file, "%sreg_ixl%d%s %d,\n",   pad, i, sep, FindSignal(reg_ixl[i]));
+      ::fprintf(file, "%sreg_iyh%d%s %d,\n",   pad, i, sep, FindSignal(reg_iyh[i]));
+      ::fprintf(file, "%sreg_iyl%d%s %d,\n",   pad, i, sep, FindSignal(reg_iyl[i]));
+      ::fprintf(file, "%sreg_i%d%s %d,\n",     pad, i, sep, FindSignal(reg_i[i]));
+      ::fprintf(file, "%sreg_r%d%s %d,\n",     pad, i, sep, FindSignal(reg_r[i]));
+      ::fprintf(file, "%sreg_aa%d%s %d,\n",    pad, i, sep, FindSignal(reg_a2[i]));
+      ::fprintf(file, "%sreg_ff%d%s %d,\n",    pad, i, sep, FindSignal(reg_f2[i]));
+      ::fprintf(file, "%sreg_bb%d%s %d,\n",    pad, i, sep, FindSignal(reg_b2[i]));
+      ::fprintf(file, "%sreg_cc%d%s %d,\n",    pad, i, sep, FindSignal(reg_c2[i]));
+      ::fprintf(file, "%sreg_dd%d%s %d,\n",    pad, i, sep, FindSignal(reg_d2[i]));
+      ::fprintf(file, "%sreg_ee%d%s %d,\n",    pad, i, sep, FindSignal(reg_e2[i]));
+      ::fprintf(file, "%sreg_hh%d%s %d,\n",    pad, i, sep, FindSignal(reg_h2[i]));
+      ::fprintf(file, "%sreg_ll%d%s %d,\n",    pad, i, sep, FindSignal(reg_l2[i]));
+   }
+}
+
+
+void write_nodenames_file(string filename) {
+   FILE* nodefile = ::fopen(filename.c_str(), "wb");
+   ::fputs("var nodenames ={\n", nodefile);
+   output_nodenames(nodefile, "", ":");
+   ::fputs("}\n", nodefile);
+   ::fclose(nodefile);
+}
+
+
+void write_transdefs_file(string filename) {
+   // The format here is
+   //   name
+   //   gate,c1,c2
+   //   bb (bounding box: xmin, xmax, ymin, ymax)
+   //   geometry (unused) (width1, width2, length, #segments, area)
+   //   weak (boolean) (marks weak transistors, whether pullups or pass gates)
+   //
+
+   // Maintain a list of signals that should be forces to ground sue to traps
+   // (the depletion mode transistors are processed first, so two passes are not required)
+
+   vector<int> force_to_ground;
+
+   FILE* trfile = ::fopen(filename.c_str(), "wb");
+   ::fputs("var transdefs = [\n", trfile);
+   for (unsigned int i = 0; i < transistors.size(); i++)
+   {
+      int weak = 0;
+      // ['t1',1646,13,663,[560,721,2656,2730],[415,415,11,5,4566],false],
+      Transistor t = transistors[i];
+      // Omit transistors that are pullups
+      if (t.source != t.gate || t.drain != SIG_VCC) {
+         if (t.drain == SIG_VCC && t.gate == SIG_VCC) {
+            printf("Warning: t%d is a enhancement pullup (g=%d, s=%d, d=%d) - marking as weak\n", i, t.gate, t.source, t.drain);
+            weak = 1;
+         } else {
+            if (t.source == SIG_GND && t.gate == SIG_GND) {
+               printf("Warning: t%d is a protection diode (g=%d, s=%d, d=%d) - excluding\n", i, t.gate, t.source, t.drain);
+               continue;
+            }
+            if (t.source == 0) {
+               printf("Warning: t%d has disconnected source (area = %d) - excluding\n", i, (int) t.area);
+               continue;
+            }
+            if (t.drain == 0) {
+               printf("Warning: t%d has disconnected drain (area = %d) - excluding\n", i, (int) t.area);
+               continue;
+            }
+            if (t.gate == 0) {
+               printf("Warning: t%d has disconnected gate (area = %d) - excluding\n", i, (int) t.area);
+               continue;
+            }
+            if (t.source == t.gate || t.source == t.drain || t.gate == t.drain) {
+               printf("Warning: t%d has unusual connections (g=%d, s=%d, d=%d)\n", i, t.gate, t.source, t.drain);
+            }
+         }
+         if (t.depletion) {
+            printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? replacing signal %d with ground in netlist\n", i, t.gate, t.source, t.drain, t.drain);
+            // All the traps have a grounded source
+            force_to_ground.push_back(t.drain);
+            continue;
+         }
+         int sx = t.x;
+         while (pombuf[t.y * size_x + sx] & TRANSISTORS) {
+            sx++;
+         }
+         int sy = t.y;
+         while (pombuf[sy * size_x + t.x] & TRANSISTORS) {
+            sy++;
+         }
+         int gate   = t.gate;
+         int source = t.source;
+         int drain  = t.drain;
+         for (int j = 0; j < force_to_ground.size(); j++) {
+            int trap = force_to_ground[j];
+            if (gate == trap ) {
+               gate = SIG_GND;
+               printf("Forcing gate to ground on transistor %d due to trap\n", i);
+            }
+            if (source == trap) {
+               source = SIG_GND;
+               printf("Forcing source to ground on transistor %d due to trap\n", i);
+            }
+            if (drain == trap) {
+               drain = SIG_GND;
+               printf("Forcing drain to ground on transistor %d due to trap\n", i);
+            }
+         }
+         ::fprintf(trfile, "['t%d',%d,%d,%d,", i, gate, source, drain);
+         ::fprintf(trfile, "[%d,%d,%d,%d],", t.x, sx, size_y - sy - 1, size_y - t.y - 1);
+         ::fprintf(trfile, "[%d,%d,%d,%d,%d],%s,],\n", 1, 1, 1, 1, (int) t.area, (weak ? "true" : "false"));
+      } else {
+         if (!t.depletion) {
+            printf("Warning: t%d is not depletion mode and is being excluded\n", i);
+         }
+      }
+   }
+   ::fputs("]\n", trfile);
+   ::fclose(trfile);
+}
+
+
+void write_perfect_z80_file(string filename) {
+   // Maintain a list of signals that should be forces to ground sue to traps
+   // (the depletion mode transistors are processed first, so two passes are not required)
+
+   vector<int> force_to_ground;
+
+   FILE* trfile = ::fopen(filename.c_str(), "wb");
+
+   ::fputs("#include \"types.h\"\n", trfile);
+   ::fputs("\n", trfile);
+   ::fputs("enum {\n", trfile);
+   output_nodenames(trfile, "   ", " =");
+   ::fputs("};\n", trfile);
+   ::fputs("\n", trfile);
+   ::fputs("BOOL\n", trfile);
+   ::fputs("netlist_z80_node_is_pullup[] = {\n", trfile);
+   int num_per_line = 23;
+   for (int i = 0; i < signals.size(); i++) {
+      if ((i % num_per_line) == 0) {
+         ::fputs("  ", trfile);
+      }
+      if (signals[i].pullup) {
+         ::fputs(" 1", trfile);
+      } else {
+         ::fputs(" 0", trfile);
+      }
+      if (i != signals.size() - 1) {
+         ::fputs(",", trfile);
+      }
+      if ((i % num_per_line) == (num_per_line - 1)) {
+         ::fputs("\n", trfile);
+      }
+   }
+   ::fputs("\n", trfile);
+   ::fputs("};\n", trfile);
+   ::fputs("\n", trfile);
+   ::fputs("netlist_transdefs\n", trfile);
+   ::fputs("netlist_z80_transdefs[] = {\n", trfile);
+   for (int i = 0; i < transistors.size(); i++) {
+      Transistor t = transistors[i];
+      if (t.source == SIG_GND && t.gate == SIG_GND) {
+         printf("Warning: t%d is a protection diode (g=%d, s=%d, d=%d) - excluding\n", i, t.gate, t.source, t.drain);
+         continue;
+      }
+      if (t.source == 0) {
+         printf("Warning: t%d has disconnected source (area = %d) - excluding\n", i, (int) t.area);
+         continue;
+      }
+      if (t.drain == 0) {
+         printf("Warning: t%d has disconnected drain (area = %d) - excluding\n", i, (int) t.area);
+         continue;
+      }
+      if (t.gate == 0) {
+         printf("Warning: t%d has disconnected gate (area = %d) - excluding\n", i, (int) t.area);
+         continue;
+      }
+      if ((t.source != t.gate || t.drain != SIG_VCC) && t.depletion) {
+         printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? replacing signal %d with ground in netlist\n", i, t.gate, t.source, t.drain, t.drain);
+         // All the traps have a grounded source
+         force_to_ground.push_back(t.drain);
+         continue;
+      }
+      int gate   = t.gate;
+      int source = t.source;
+      int drain  = t.drain;
+      for (int j = 0; j < force_to_ground.size(); j++) {
+         int trap = force_to_ground[j];
+         if (gate == trap ) {
+            gate = SIG_GND;
+            printf("Forcing gate to ground on transistor %d due to trap\n", i);
+         }
+         if (source == trap) {
+            source = SIG_GND;
+            printf("Forcing source to ground on transistor %d due to trap\n", i);
+         }
+         if (drain == trap) {
+            drain = SIG_GND;
+            printf("Forcing drain to ground on transistor %d due to trap\n", i);
+         }
+      }
+      ::fprintf(trfile, "   {%d, %d, %d}", gate, source, drain);
+      if (i != transistors.size() - 1) {
+         ::fputs(",\n", trfile);
+      } else {
+         ::fputs("\n", trfile);
+      }
+   }
+   ::fputs("};\n", trfile);
+   ::fclose(trfile);
+}
 
 // Everything starts here
 int main(int argc, char *argv[])
@@ -2424,24 +2625,19 @@ int main(int argc, char *argv[])
 
    // Simulated Z80 program
 
-   unsigned int reg_a[8], reg_f[8], reg_b[8], reg_c[8], reg_d[8], reg_e[8], reg_d2[8], reg_e2[8], reg_h[8], reg_l[8], reg_h2[8], reg_l2[8];
-   unsigned int reg_w[8], reg_z[8], reg_pch[8], reg_pcl[8], reg_sph[8], reg_spl[8];
-   unsigned int reg_ixh[8], reg_ixl[8], reg_iyh[8], reg_iyl[8], reg_i[8], reg_r[8];
-   unsigned int reg_a2[8], reg_f2[8], reg_b2[8], reg_c2[8];
+   sig_t1 = FindTransistor(572, 1203);
+   sig_t2 = FindTransistor(831, 1895);
+   sig_t3 = FindTransistor(901, 1242);
+   sig_t4 = FindTransistor(876, 1259);
+   sig_t5 = FindTransistor(825, 1958);
+   sig_t6 = FindTransistor(921, 1211);
 
-   unsigned int sig_t1 = FindTransistor(572, 1203);
-   unsigned int sig_t2 = FindTransistor(831, 1895);
-   unsigned int sig_t3 = FindTransistor(901, 1242);
-   unsigned int sig_t4 = FindTransistor(876, 1259);
-   unsigned int sig_t5 = FindTransistor(825, 1958);
-   unsigned int sig_t6 = FindTransistor(921, 1211);
-
-   unsigned int sig_m1 = FindTransistor(1051, 1057);
-   unsigned int sig_m2 = FindTransistor(1014, 1165);
-   unsigned int sig_m3 = FindTransistor(1018, 1319);
-   unsigned int sig_m4 = FindTransistor(1027, 1300);
-   unsigned int sig_m5 = FindTransistor(1014, 1243);
-   unsigned int sig_m6 = FindTransistor(3180, 3026);
+   sig_m1 = FindTransistor(1051, 1057);
+   sig_m2 = FindTransistor(1014, 1165);
+   sig_m3 = FindTransistor(1018, 1319);
+   sig_m4 = FindTransistor(1027, 1300);
+   sig_m5 = FindTransistor(1014, 1243);
+   sig_m6 = FindTransistor(3180, 3026);
 
    // There are multiple flip flops controlling the register set:
    //
@@ -2462,17 +2658,17 @@ int main(int argc, char *argv[])
    // The transistors are arbitrary ones with their gates connected to
    // the control lines, so hopefully they will work for you.
 
-   //unsigned int sig_ex_af            = FindTransistor(2306, 3051);
-   //unsigned int sig_ex_bcdehl        = FindTransistor(979, 3093);
-   //unsigned int sig_ex_dehl0         = FindTransistor(1449, 2971);
-   //unsigned int sig_ex_dehl1         = FindTransistor(1193, 2981);
-   //unsigned int sig_ex_dehl_combined = FindTransistor(1443, 3001);
+   //sig_ex_af            = FindTransistor(2306, 3051);
+   //sig_ex_bcdehl        = FindTransistor(979, 3093);
+   //sig_ex_dehl0         = FindTransistor(1449, 2971);
+   //sig_ex_dehl1         = FindTransistor(1193, 2981);
+   //sig_ex_dehl_combined = FindTransistor(1443, 3001);
 
-   unsigned int sig_ex_af            = FindTransistor(2455, 3030);
-   unsigned int sig_ex_bcdehl        = FindTransistor( 661, 3130);
-   unsigned int sig_ex_dehl0         = FindTransistor(1018, 2981);
-   unsigned int sig_ex_dehl1         = FindTransistor(1193, 2981);
-   unsigned int sig_ex_dehl_combined = FindTransistor(1443, 3001);
+   sig_ex_af            = FindTransistor(2455, 3030);
+   sig_ex_bcdehl        = FindTransistor( 661, 3130);
+   sig_ex_dehl0         = FindTransistor(1018, 2981);
+   sig_ex_dehl1         = FindTransistor(1193, 2981);
+   sig_ex_dehl_combined = FindTransistor(1443, 3001);
 
    reg_pcl[0] = FindTransistor(1345, 3231);
    reg_pcl[1] = FindTransistor(1345, 3307);
@@ -2784,106 +2980,16 @@ int main(int argc, char *argv[])
    printf("----------------- Writing netlist files----------------\n");
    printf("-------------------------------------------------------\n");
 
-   write_transdefs_file();
+   // Annotate the transitors with their pullup status
+   update_pullup_status();
 
-   write_segdefs_file();
+   // Output the file for perfect z80 simulator
+   write_perfect_z80_file("netlist_z80.h");
 
-   FILE* nodefile = ::fopen("nodenames.js", "wb");
-   ::fputs("var nodenames ={\n", nodefile);
-   ::fprintf(nodefile, "vss: %d,\n",SIG_GND);
-   ::fprintf(nodefile, "vcc: %d,\n",SIG_VCC);
-   ::fprintf(nodefile, "clk: %d,\n",PAD_CLK);
-   ::fprintf(nodefile, "ab0: %d,\n",PAD_A0);
-   ::fprintf(nodefile, "ab1: %d,\n",PAD_A1);
-   ::fprintf(nodefile, "ab2: %d,\n",PAD_A2);
-   ::fprintf(nodefile, "ab3: %d,\n",PAD_A3);
-   ::fprintf(nodefile, "ab4: %d,\n",PAD_A4);
-   ::fprintf(nodefile, "ab5: %d,\n",PAD_A5);
-   ::fprintf(nodefile, "ab6: %d,\n",PAD_A6);
-   ::fprintf(nodefile, "ab7: %d,\n",PAD_A7);
-   ::fprintf(nodefile, "ab8: %d,\n",PAD_A8);
-   ::fprintf(nodefile, "ab9: %d,\n",PAD_A9);
-   ::fprintf(nodefile, "ab10: %d,\n",PAD_A10);
-   ::fprintf(nodefile, "ab11: %d,\n",PAD_A11);
-   ::fprintf(nodefile, "ab12: %d,\n",PAD_A12);
-   ::fprintf(nodefile, "ab13: %d,\n",PAD_A13);
-   ::fprintf(nodefile, "ab14: %d,\n",PAD_A14);
-   ::fprintf(nodefile, "ab15: %d,\n",PAD_A15);
-   ::fprintf(nodefile, "_reset: %d,\n",PAD__RESET);
-   ::fprintf(nodefile, "_wait: %d,\n",PAD__WAIT);
-   ::fprintf(nodefile, "_int: %d,\n",PAD__INT);
-   ::fprintf(nodefile, "_nmi: %d,\n",PAD__NMI);
-   ::fprintf(nodefile, "_busrq: %d,\n",PAD__BUSRQ);
-   ::fprintf(nodefile, "_m1: %d,\n",PAD__M1);
-   ::fprintf(nodefile, "_rd: %d,\n",PAD__RD);
-   ::fprintf(nodefile, "_wr: %d,\n",PAD__WR);
-   ::fprintf(nodefile, "_mreq: %d,\n",PAD__MREQ);
-   ::fprintf(nodefile, "_iorq: %d,\n",PAD__IORQ);
-   ::fprintf(nodefile, "_rfsh: %d,\n",PAD__RFSH);
-   ::fprintf(nodefile, "db0: %d,\n",PAD_D0);
-   ::fprintf(nodefile, "db1: %d,\n",PAD_D1);
-   ::fprintf(nodefile, "db2: %d,\n",PAD_D2);
-   ::fprintf(nodefile, "db3: %d,\n",PAD_D3);
-   ::fprintf(nodefile, "db4: %d,\n",PAD_D4);
-   ::fprintf(nodefile, "db5: %d,\n",PAD_D5);
-   ::fprintf(nodefile, "db6: %d,\n",PAD_D6);
-   ::fprintf(nodefile, "db7: %d,\n",PAD_D7);
-   ::fprintf(nodefile, "_halt: %d,\n",PAD__HALT);
-   ::fprintf(nodefile, "_busak: %d,\n",PAD__BUSAK);
-
-   ::fprintf(nodefile, "t1: %d,\n", FindSignalX(sig_t1));
-   ::fprintf(nodefile, "t2: %d,\n", FindSignalX(sig_t2));
-   ::fprintf(nodefile, "t3: %d,\n", FindSignalX(sig_t3));
-   ::fprintf(nodefile, "t4: %d,\n", FindSignalX(sig_t4));
-   ::fprintf(nodefile, "t5: %d,\n", FindSignalX(sig_t5));
-   ::fprintf(nodefile, "t6: %d,\n", FindSignalX(sig_t6));
-   ::fprintf(nodefile, "m1: %d,\n", FindSignalX(sig_m1));
-   ::fprintf(nodefile, "m2: %d,\n", FindSignalX(sig_m2));
-   ::fprintf(nodefile, "m3: %d,\n", FindSignalX(sig_m3));
-   ::fprintf(nodefile, "m4: %d,\n", FindSignalX(sig_m4));
-   ::fprintf(nodefile, "m5: %d,\n", FindSignalX(sig_m5));
-   ::fprintf(nodefile, "m6: %d,\n", FindSignalX(sig_m6));
-   ::fprintf(nodefile, "m6: %d,\n", FindSignalX(sig_m6));
-
-   ::fprintf(nodefile, "ex_af: %d,\n", FindSignalX(sig_ex_af));
-   ::fprintf(nodefile, "ex_bcdehl: %d,\n", FindSignalX(sig_ex_bcdehl));
-   ::fprintf(nodefile, "ex_dehl0: %d,\n", FindSignalX(sig_ex_dehl0));
-   ::fprintf(nodefile, "ex_dehl1: %d,\n", FindSignalX(sig_ex_dehl1));
-   ::fprintf(nodefile, "ex_dehl_combined: %d,\n", FindSignalX(sig_ex_dehl_combined));
-
-   for (int i = 0; i < 8; i++) {
-      ::fprintf(nodefile, "reg_a%d: %d,\n",   i, FindSignal(reg_a[i]));
-      ::fprintf(nodefile, "reg_f%d: %d,\n",   i, FindSignal(reg_f[i]));
-      ::fprintf(nodefile, "reg_b%d: %d,\n",   i, FindSignal(reg_b[i]));
-      ::fprintf(nodefile, "reg_c%d: %d,\n",   i, FindSignal(reg_c[i]));
-      ::fprintf(nodefile, "reg_d%d: %d,\n",   i, FindSignal(reg_d[i]));
-      ::fprintf(nodefile, "reg_e%d: %d,\n",   i, FindSignal(reg_e[i]));
-      ::fprintf(nodefile, "reg_h%d: %d,\n",   i, FindSignal(reg_h[i]));
-      ::fprintf(nodefile, "reg_l%d: %d,\n",   i, FindSignal(reg_l[i]));
-      ::fprintf(nodefile, "reg_w%d: %d,\n",   i, FindSignal(reg_w[i]));
-      ::fprintf(nodefile, "reg_z%d: %d,\n",   i, FindSignal(reg_z[i]));
-      ::fprintf(nodefile, "reg_pch%d: %d,\n", i, FindSignal(reg_pch[i]));
-      ::fprintf(nodefile, "reg_pcl%d: %d,\n", i, FindSignal(reg_pcl[i]));
-      ::fprintf(nodefile, "reg_sph%d: %d,\n", i, FindSignal(reg_sph[i]));
-      ::fprintf(nodefile, "reg_spl%d: %d,\n", i, FindSignal(reg_spl[i]));
-      ::fprintf(nodefile, "reg_ixh%d: %d,\n", i, FindSignal(reg_ixh[i]));
-      ::fprintf(nodefile, "reg_ixl%d: %d,\n", i, FindSignal(reg_ixl[i]));
-      ::fprintf(nodefile, "reg_iyh%d: %d,\n", i, FindSignal(reg_iyh[i]));
-      ::fprintf(nodefile, "reg_iyl%d: %d,\n", i, FindSignal(reg_iyl[i]));
-      ::fprintf(nodefile, "reg_i%d: %d,\n",   i, FindSignal(reg_i[i]));
-      ::fprintf(nodefile, "reg_r%d: %d,\n",   i, FindSignal(reg_r[i]));
-      ::fprintf(nodefile, "reg_aa%d: %d,\n",  i, FindSignal(reg_a2[i]));
-      ::fprintf(nodefile, "reg_ff%d: %d,\n",  i, FindSignal(reg_f2[i]));
-      ::fprintf(nodefile, "reg_bb%d: %d,\n",  i, FindSignal(reg_b2[i]));
-      ::fprintf(nodefile, "reg_cc%d: %d,\n",  i, FindSignal(reg_c2[i]));
-      ::fprintf(nodefile, "reg_dd%d: %d,\n",  i, FindSignal(reg_d2[i]));
-      ::fprintf(nodefile, "reg_ee%d: %d,\n",  i, FindSignal(reg_e2[i]));
-      ::fprintf(nodefile, "reg_hh%d: %d,\n",  i, FindSignal(reg_h2[i]));
-      ::fprintf(nodefile, "reg_ll%d: %d,\n",  i, FindSignal(reg_l2[i]));
-   }
-   ::fputs("}\n", nodefile);
-   ::fclose(nodefile);
-
+   // Output the files for the Visual Z80 simulator (chipsim)
+   write_transdefs_file("transdefs.js");
+   write_segdefs_file("segdefs.js");
+   write_nodenames_file("nodenames.js");
 
    // =============================
    // End of saving colored bitmaps
