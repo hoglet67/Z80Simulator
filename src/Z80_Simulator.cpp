@@ -181,6 +181,34 @@ unsigned int sig_ex_dehl0;
 unsigned int sig_ex_dehl1;
 unsigned int sig_ex_dehl_combined;
 
+unsigned int sig_alua[8];
+unsigned int sig_alubus[8];
+unsigned int sig_alub[8];
+unsigned int sig_alulat[4];
+unsigned int sig_aluout[4];
+unsigned int sig_dlatch[8];
+unsigned int sig_dl_dp;
+unsigned int sig_dl_d;
+unsigned int sig_dp_dl;
+unsigned int sig_d_dl;
+unsigned int sig_d_u;
+unsigned int sig_instr[8];
+unsigned int sig_load_ir;
+unsigned int sig_pcbit[16];
+unsigned int sig_pla[99];
+unsigned int sig_rh_wr;
+unsigned int sig_rl_wr;
+unsigned int sig_r_p;
+unsigned int sig_r_u;
+unsigned int sig_r_v;
+unsigned int sig_r_x1;
+unsigned int sig_ubus[8];
+unsigned int sig_u_v;
+unsigned int sig_vbus[8];
+unsigned int sig__instr[8];
+unsigned int sig_dbus[8];
+unsigned int sig_regbit[16];
+
 // Connection to transistor remembers index of connected transistor and its terminal
 // proportion is the proportion of that transisor are to the area of all transistors connected
 // to the respective signal - it is here for optimalisation purposes
@@ -1065,56 +1093,6 @@ int FindTransistor(unsigned int x, unsigned int y)
    return -1;
 }
 
-int FindSignalX(int i)
-{
-   int sig = -1;
-   Transistor t = transistors[i];
-   return t.gate;
-}
-
-int FindSignal(int i)
-{
-   int sig = -1;
-   Transistor t = transistors[i];
-   if (t.drain == SIG_GND || t.drain == SIG_VCC) {
-      sig = t.source;
-      printf("t%d: using source because drain is fixed at %d\n", i, (t.drain == SIG_VCC ? 1 : 0));
-   } else if (t.source == SIG_GND || t.source == SIG_VCC) {
-      sig = t.drain;
-      printf("t%d: using drain because source is fixed at %d\n", i, (t.source == SIG_VCC ? 1 : 0));
-   }
-   if (sig < 0) {
-      for (int j = 0; j < t.drainconnections.size(); j++) {
-         int x = t.drainconnections[j].index;
-         printf("t%d.drain connects to t%d\n", i, x);
-         Transistor t2 = transistors[x];
-         if (t2.source == t2.gate && t2.source == t.drain && t2.drain == SIG_VCC) {
-            sig = t.drain;
-            printf("t%d: using drain because net connects to pullup t%d\n", i, x);
-            break;
-         }
-      }
-   }
-   if (sig < 0) {
-      for (int j = 0; j < t.sourceconnections.size(); j++) {
-         int x = t.sourceconnections[j].index;
-         printf("t%d.source connects to t%d\n", i, x);
-         Transistor t2 = transistors[x];
-         if (t2.source == t2.gate && t2.source == t.source && t2.drain == SIG_VCC) {
-            sig = t.source;
-            printf("t%d: using source because net connects to pullup t%d\n", i, x);
-            break;
-         }
-      }
-   }
-   if (sig < 0 || sig == SIG_GND || sig == SIG_VCC) {
-      printf("Failed to find output of transistor %d, defaulting to the drain\n", i);
-      sig = t.drain;
-   }
-   printf("t%d: Using signal %d\n", i, sig);
-   return sig;
-}
-
 void CheckTransistor(int x, int y)
 {
    if ((pombuf[y * size_x + x] & (TRANSISTORS | TEMPORARY)) != TRANSISTORS)
@@ -1453,6 +1431,7 @@ void update_pullup_status() {
 void output_nodenames(FILE *file, string padstr, string sepstr) {
    const char *pad = padstr.c_str();
    const char *sep = sepstr.c_str();
+   ::fprintf(file, "%s// Pads\n", pad);
    ::fprintf(file, "%svss%s %d,\n", pad, sep, SIG_GND);
    ::fprintf(file, "%svcc%s %d,\n", pad, sep, SIG_VCC);
    ::fprintf(file, "%sclk%s %d,\n", pad, sep, PAD_CLK);
@@ -1474,9 +1453,15 @@ void output_nodenames(FILE *file, string padstr, string sepstr) {
    ::fprintf(file, "%sab15%s %d,\n", pad, sep, PAD_A15);
    ::fprintf(file, "%s_reset%s %d,\n", pad, sep, PAD__RESET);
    ::fprintf(file, "%s_wait%s %d,\n", pad, sep, PAD__WAIT);
+   ::fprintf(file, "%swait%s %d,\n", pad, sep, PAD__WAIT);
    ::fprintf(file, "%s_int%s %d,\n", pad, sep, PAD__INT);
+   ::fprintf(file, "%sint%s %d,\n", pad, sep, PAD__INT);
+   ::fprintf(file, "%s_irq%s %d,\n", pad, sep, PAD__INT);
+   ::fprintf(file, "%sirq%s %d,\n", pad, sep, PAD__INT);
    ::fprintf(file, "%s_nmi%s %d,\n", pad, sep, PAD__NMI);
+   ::fprintf(file, "%snmi%s %d,\n", pad, sep, PAD__NMI);
    ::fprintf(file, "%s_busrq%s %d,\n", pad, sep, PAD__BUSRQ);
+   ::fprintf(file, "%sbusrq%s %d,\n", pad, sep, PAD__BUSRQ);
    ::fprintf(file, "%s_m1%s %d,\n", pad, sep, PAD__M1);
    ::fprintf(file, "%s_rd%s %d,\n", pad, sep, PAD__RD);
    ::fprintf(file, "%s_wr%s %d,\n", pad, sep, PAD__WR);
@@ -1494,54 +1479,178 @@ void output_nodenames(FILE *file, string padstr, string sepstr) {
    ::fprintf(file, "%s_halt%s %d,\n", pad, sep, PAD__HALT);
    ::fprintf(file, "%s_busak%s %d,\n", pad, sep, PAD__BUSAK);
 
-   ::fprintf(file, "%st1%s %d,\n", pad, sep,  FindSignalX(sig_t1));
-   ::fprintf(file, "%st2%s %d,\n", pad, sep,  FindSignalX(sig_t2));
-   ::fprintf(file, "%st3%s %d,\n", pad, sep,  FindSignalX(sig_t3));
-   ::fprintf(file, "%st4%s %d,\n", pad, sep,  FindSignalX(sig_t4));
-   ::fprintf(file, "%st5%s %d,\n", pad, sep,  FindSignalX(sig_t5));
-   ::fprintf(file, "%st6%s %d,\n", pad, sep,  FindSignalX(sig_t6));
-   ::fprintf(file, "%sm1%s %d,\n", pad, sep,  FindSignalX(sig_m1));
-   ::fprintf(file, "%sm2%s %d,\n", pad, sep,  FindSignalX(sig_m2));
-   ::fprintf(file, "%sm3%s %d,\n", pad, sep,  FindSignalX(sig_m3));
-   ::fprintf(file, "%sm4%s %d,\n", pad, sep,  FindSignalX(sig_m4));
-   ::fprintf(file, "%sm5%s %d,\n", pad, sep,  FindSignalX(sig_m5));
-   ::fprintf(file, "%sm6%s %d,\n", pad, sep,  FindSignalX(sig_m6));
+   ::fprintf(file, "%s// T-States\n", pad);
+   ::fprintf(file, "%st1%s %d,\n", pad, sep,  transistors[sig_t1].gate);
+   ::fprintf(file, "%st2%s %d,\n", pad, sep,  transistors[sig_t2].gate);
+   ::fprintf(file, "%st3%s %d,\n", pad, sep,  transistors[sig_t3].gate);
+   ::fprintf(file, "%st4%s %d,\n", pad, sep,  transistors[sig_t4].gate);
+   ::fprintf(file, "%st5%s %d,\n", pad, sep,  transistors[sig_t5].gate);
+   ::fprintf(file, "%st6%s %d,\n", pad, sep,  transistors[sig_t6].gate);
 
-   ::fprintf(file, "%sex_af%s %d,\n", pad, sep,  FindSignalX(sig_ex_af));
-   ::fprintf(file, "%sex_bcdehl%s %d,\n", pad, sep,  FindSignalX(sig_ex_bcdehl));
-   ::fprintf(file, "%sex_dehl0%s %d,\n", pad, sep,  FindSignalX(sig_ex_dehl0));
-   ::fprintf(file, "%sex_dehl1%s %d,\n", pad, sep,  FindSignalX(sig_ex_dehl1));
-   ::fprintf(file, "%sex_dehl_combined%s %d,\n", pad, sep,  FindSignalX(sig_ex_dehl_combined));
+   ::fprintf(file, "%s// Machine cycles\n", pad);
+   ::fprintf(file, "%sm1%s %d,\n", pad, sep,  transistors[sig_m1].gate);
+   ::fprintf(file, "%sm2%s %d,\n", pad, sep,  transistors[sig_m2].gate);
+   ::fprintf(file, "%sm3%s %d,\n", pad, sep,  transistors[sig_m3].gate);
+   ::fprintf(file, "%sm4%s %d,\n", pad, sep,  transistors[sig_m4].gate);
+   ::fprintf(file, "%sm5%s %d,\n", pad, sep,  transistors[sig_m5].gate);
+   ::fprintf(file, "%sm6%s %d,\n", pad, sep,  transistors[sig_m6].gate);
 
+   ::fprintf(file, "%s// EXX latches\n", pad);
+   ::fprintf(file, "%sex_af%s %d,\n", pad, sep,  transistors[sig_ex_af].gate);
+   ::fprintf(file, "%sex_bcdehl%s %d,\n", pad, sep,  transistors[sig_ex_bcdehl].gate);
+   ::fprintf(file, "%sex_dehl0%s %d,\n", pad, sep,  transistors[sig_ex_dehl0].gate);
+   ::fprintf(file, "%sex_dehl1%s %d,\n", pad, sep,  transistors[sig_ex_dehl1].gate);
+   ::fprintf(file, "%sex_dehl_combined%s %d,\n", pad, sep,  transistors[sig_ex_dehl_combined].gate);
+
+   ::fprintf(file, "%s// Registers\n", pad);
    for (int i = 0; i < 8; i++) {
-      ::fprintf(file, "%sreg_a%d%s %d,\n",     pad, i, sep, FindSignal(reg_a[i]));
-      ::fprintf(file, "%sreg_f%d%s %d,\n",     pad, i, sep, FindSignal(reg_f[i]));
-      ::fprintf(file, "%sreg_b%d%s %d,\n",     pad, i, sep, FindSignal(reg_b[i]));
-      ::fprintf(file, "%sreg_c%d%s %d,\n",     pad, i, sep, FindSignal(reg_c[i]));
-      ::fprintf(file, "%sreg_d%d%s %d,\n",     pad, i, sep, FindSignal(reg_d[i]));
-      ::fprintf(file, "%sreg_e%d%s %d,\n",     pad, i, sep, FindSignal(reg_e[i]));
-      ::fprintf(file, "%sreg_h%d%s %d,\n",     pad, i, sep, FindSignal(reg_h[i]));
-      ::fprintf(file, "%sreg_l%d%s %d,\n",     pad, i, sep, FindSignal(reg_l[i]));
-      ::fprintf(file, "%sreg_w%d%s %d,\n",     pad, i, sep, FindSignal(reg_w[i]));
-      ::fprintf(file, "%sreg_z%d%s %d,\n",     pad, i, sep, FindSignal(reg_z[i]));
-      ::fprintf(file, "%sreg_pch%d%s %d,\n",   pad, i, sep, FindSignal(reg_pch[i]));
-      ::fprintf(file, "%sreg_pcl%d%s %d,\n",   pad, i, sep, FindSignal(reg_pcl[i]));
-      ::fprintf(file, "%sreg_sph%d%s %d,\n",   pad, i, sep, FindSignal(reg_sph[i]));
-      ::fprintf(file, "%sreg_spl%d%s %d,\n",   pad, i, sep, FindSignal(reg_spl[i]));
-      ::fprintf(file, "%sreg_ixh%d%s %d,\n",   pad, i, sep, FindSignal(reg_ixh[i]));
-      ::fprintf(file, "%sreg_ixl%d%s %d,\n",   pad, i, sep, FindSignal(reg_ixl[i]));
-      ::fprintf(file, "%sreg_iyh%d%s %d,\n",   pad, i, sep, FindSignal(reg_iyh[i]));
-      ::fprintf(file, "%sreg_iyl%d%s %d,\n",   pad, i, sep, FindSignal(reg_iyl[i]));
-      ::fprintf(file, "%sreg_i%d%s %d,\n",     pad, i, sep, FindSignal(reg_i[i]));
-      ::fprintf(file, "%sreg_r%d%s %d,\n",     pad, i, sep, FindSignal(reg_r[i]));
-      ::fprintf(file, "%sreg_aa%d%s %d,\n",    pad, i, sep, FindSignal(reg_a2[i]));
-      ::fprintf(file, "%sreg_ff%d%s %d,\n",    pad, i, sep, FindSignal(reg_f2[i]));
-      ::fprintf(file, "%sreg_bb%d%s %d,\n",    pad, i, sep, FindSignal(reg_b2[i]));
-      ::fprintf(file, "%sreg_cc%d%s %d,\n",    pad, i, sep, FindSignal(reg_c2[i]));
-      ::fprintf(file, "%sreg_dd%d%s %d,\n",    pad, i, sep, FindSignal(reg_d2[i]));
-      ::fprintf(file, "%sreg_ee%d%s %d,\n",    pad, i, sep, FindSignal(reg_e2[i]));
-      ::fprintf(file, "%sreg_hh%d%s %d,\n",    pad, i, sep, FindSignal(reg_h2[i]));
-      ::fprintf(file, "%sreg_ll%d%s %d,\n",    pad, i, sep, FindSignal(reg_l2[i]));
+      ::fprintf(file, "%sreg_a%d%s %d,\n",     pad, i, sep, transistors[reg_a[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_f%d%s %d,\n",     pad, i, sep, transistors[reg_f[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_b%d%s %d,\n",     pad, i, sep, transistors[reg_b[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_c%d%s %d,\n",     pad, i, sep, transistors[reg_c[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_d%d%s %d,\n",     pad, i, sep, transistors[reg_d[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_e%d%s %d,\n",     pad, i, sep, transistors[reg_e[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_h%d%s %d,\n",     pad, i, sep, transistors[reg_h[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_l%d%s %d,\n",     pad, i, sep, transistors[reg_l[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_w%d%s %d,\n",     pad, i, sep, transistors[reg_w[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_z%d%s %d,\n",     pad, i, sep, transistors[reg_z[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_pch%d%s %d,\n",   pad, i, sep, transistors[reg_pch[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_pcl%d%s %d,\n",   pad, i, sep, transistors[reg_pcl[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_sph%d%s %d,\n",   pad, i, sep, transistors[reg_sph[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_spl%d%s %d,\n",   pad, i, sep, transistors[reg_spl[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_ixh%d%s %d,\n",   pad, i, sep, transistors[reg_ixh[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_ixl%d%s %d,\n",   pad, i, sep, transistors[reg_ixl[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_iyh%d%s %d,\n",   pad, i, sep, transistors[reg_iyh[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_iyl%d%s %d,\n",   pad, i, sep, transistors[reg_iyl[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_i%d%s %d,\n",     pad, i, sep, transistors[reg_i[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_r%d%s %d,\n",     pad, i, sep, transistors[reg_r[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_aa%d%s %d,\n",    pad, i, sep, transistors[reg_a2[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_ff%d%s %d,\n",    pad, i, sep, transistors[reg_f2[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_bb%d%s %d,\n",    pad, i, sep, transistors[reg_b2[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_cc%d%s %d,\n",    pad, i, sep, transistors[reg_c2[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_dd%d%s %d,\n",    pad, i, sep, transistors[reg_d2[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_ee%d%s %d,\n",    pad, i, sep, transistors[reg_e2[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_hh%d%s %d,\n",    pad, i, sep, transistors[reg_h2[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sreg_ll%d%s %d,\n",    pad, i, sep, transistors[reg_l2[i]].gate);
+   }
+
+   ::fprintf(file, "%s// Data buses and control\n", pad);
+   ::fprintf(file, "%sdp_dl%s %d,\n", pad, sep,  transistors[sig_dp_dl].gate);
+   ::fprintf(file, "%sdl_dp%s %d,\n", pad, sep,  transistors[sig_dl_dp].gate);
+   ::fprintf(file, "%sload_ir%s %d,\n", pad, sep,  transistors[sig_load_ir].gate);
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sdlatch%d%s %d,\n",    pad, i, sep, transistors[sig_dlatch[i]].gate);
+   }
+   ::fprintf(file, "%sdl_d%s %d,\n", pad, sep,  transistors[sig_dl_d].gate);
+   ::fprintf(file, "%sd_dl%s %d,\n", pad, sep,  transistors[sig_d_dl].gate);
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sdbus%d%s %d,\n",      pad, i, sep, transistors[sig_dbus[i]].source);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%s_instr%d%s %d,\n",    pad, i, sep, transistors[sig__instr[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%sinstr%d%s %d,\n",     pad, i, sep, transistors[sig_instr[i]].gate);
+   }
+   ::fprintf(file, "%sd_u%s %d,\n", pad, sep,  transistors[sig_d_u].gate);
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%subus%d%s %d,\n",      pad, i, sep, transistors[sig_ubus[i]].gate);
+   }
+   ::fprintf(file, "%su_v%s %d,\n", pad, sep,  transistors[sig_u_v].gate);
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%svbus%d%s %d,\n",      pad, i, sep, transistors[sig_vbus[i]].gate);
+   }
+   ::fprintf(file, "%srl_wr%s %d,\n", pad, sep,  transistors[sig_rl_wr].gate);
+   ::fprintf(file, "%srh_wr%s %d,\n", pad, sep,  transistors[sig_rh_wr].gate);
+   ::fprintf(file, "%sr_u%s %d,\n", pad, sep,  transistors[sig_r_u].gate);
+   ::fprintf(file, "%sr_v%s %d,\n", pad, sep,  transistors[sig_r_v].gate);
+   for (int i = 0; i < 16; i++) {
+      ::fprintf(file, "%sregbit%d%s %d,\n", pad, i, sep,  transistors[sig_regbit[i]].source);
+   }
+   ::fprintf(file, "%sr_p%s %d,\n", pad, sep,  transistors[sig_r_p].gate);
+   ::fprintf(file, "%sr_x1%s %d,\n", pad, sep,  transistors[sig_r_x1].gate);
+   for (int i = 0; i < 16; i++) {
+      ::fprintf(file, "%spcbit%d%s %d,\n", pad, i, sep,  transistors[sig_pcbit[i]].gate);
+   }
+
+   ::fprintf(file, "%s// ALU\n", pad);
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%salubus%d%s %d,\n",    pad, i, sep, transistors[sig_alubus[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%salua%d%s %d,\n",      pad, i, sep, transistors[sig_alua[i]].gate);
+   }
+   for (int i = 0; i < 8; i++) {
+      ::fprintf(file, "%salub%d%s %d,\n",      pad, i, sep, transistors[sig_alub[i]].gate);
+   }
+   for (int i = 0; i < 4; i++) {
+      ::fprintf(file, "%saluout%d%s %d,\n", pad, i, sep,  transistors[sig_aluout[i]].gate);
+   }
+   for (int i = 0; i < 4; i++) {
+      ::fprintf(file, "%salulat%d%s %d,\n", pad, i, sep,  transistors[sig_alulat[i]].gate);
+   }
+
+   ::fprintf(file, "%s// PLA\n", pad);
+   for (int i = 0; i < 99; i++) {
+      if (i == 83) {
+         ::fprintf(file, "%spla%d%s %d,\n", pad, i, sep,  transistors[sig_pla[i]].source);
+      } else {
+         ::fprintf(file, "%spla%d%s %d,\n", pad, i, sep,  transistors[sig_pla[i]].gate);
+      }
    }
 }
 
@@ -3076,6 +3185,230 @@ int main(int argc, char *argv[])
    reg_a[6] = FindTransistor(2328, 4259);
    reg_a[7] = FindTransistor(2328, 4336);
 
+    sig_alua[0] = FindTransistor(4029,3771);
+    sig_alua[1] = FindTransistor(4029,3974);
+    sig_alua[2] = FindTransistor(4029,4177);
+    sig_alua[3] = FindTransistor(4029,4381);
+    sig_alua[4] = FindTransistor(4034,3801);
+    sig_alua[5] = FindTransistor(4034,4005);
+    sig_alua[6] = FindTransistor(4034,4209);
+    sig_alua[7] = FindTransistor(4034,4412);
+    sig_alubus[0] = FindTransistor(3003,3712);
+    sig_alubus[1] = FindTransistor(3003,3915);
+    sig_alubus[2] = FindTransistor(3003,4118);
+    sig_alubus[3] = FindTransistor(3003,4321);
+    sig_alubus[4] = FindTransistor(3009,3842);
+    sig_alubus[5] = FindTransistor(3009,4045);
+    sig_alubus[6] = FindTransistor(3009,4249);
+    sig_alubus[7] = FindTransistor(3009,4449);
+    sig_alub[0] = FindTransistor(3092,3770);
+    sig_alub[1] = FindTransistor(3092,3973);
+    sig_alub[2] = FindTransistor(3092,4177);
+    sig_alub[3] = FindTransistor(3092,4380);
+    sig_alub[4] = FindTransistor(3104,3803);
+    sig_alub[5] = FindTransistor(3104,4006);
+    sig_alub[6] = FindTransistor(3104,4210);
+    sig_alub[7] = FindTransistor(3104,4413);
+    sig_alulat[0] = FindTransistor(3771,3771);
+    sig_alulat[1] = FindTransistor(3771,3974);
+    sig_alulat[2] = FindTransistor(3771,4178);
+    sig_alulat[3] = FindTransistor(3771,4381);
+    sig_aluout[0] = FindTransistor(3779,3739);
+    sig_aluout[1] = FindTransistor(3779,3942);
+    sig_aluout[2] = FindTransistor(3779,4146);
+    sig_aluout[3] = FindTransistor(3611,3349);
+    sig_dlatch[0] = FindTransistor(4245,555);
+    sig_dlatch[1] = FindTransistor(4368,998);
+    sig_dlatch[2] = FindTransistor(4256,1828);
+    sig_dlatch[3] = FindTransistor(4260,4093);
+    sig_dlatch[4] = FindTransistor(4256,4407);
+    sig_dlatch[5] = FindTransistor(4282,3807);
+    sig_dlatch[6] = FindTransistor(4388,3415);
+    sig_dlatch[7] = FindTransistor(4368,1324);
+    sig_dl_dp = FindTransistor(4274,1998);
+    sig_dl_d = FindTransistor(4476,2311);
+    sig_dp_dl = FindTransistor(4467,2293);
+    sig_d_dl = FindTransistor(4355,1047);
+    sig_d_u = FindTransistor(4253,3488);
+    sig_instr[0] = FindTransistor(4097,1224);
+    sig_instr[1] = FindTransistor(4097,1276);
+    sig_instr[2] = FindTransistor(4097,1329);
+    sig_instr[3] = FindTransistor(4097,1485);
+    sig_instr[4] = FindTransistor(4097,1538);
+    sig_instr[5] = FindTransistor(4097,1590);
+    sig_instr[6] = FindTransistor(4097,1381);
+    sig_instr[7] = FindTransistor(4097,1433);
+    sig_load_ir = FindTransistor(4255,1393);
+    sig_pcbit[0] = FindTransistor(1149,3223);
+    sig_pcbit[1] = FindTransistor(1143,3324);
+    sig_pcbit[2] = FindTransistor(1149,3367);
+    sig_pcbit[3] = FindTransistor(1143,3468);
+    sig_pcbit[4] = FindTransistor(1149,3511);
+    sig_pcbit[5] = FindTransistor(1143,3612);
+    sig_pcbit[6] = FindTransistor(1149,3655);
+    sig_pcbit[7] = FindTransistor(1143,3756);
+    sig_pcbit[8] = FindTransistor(1149,3819);
+    sig_pcbit[9] = FindTransistor(1143,3920);
+    sig_pcbit[10] = FindTransistor(1149,3963);
+    sig_pcbit[11] = FindTransistor(1143,4064);
+    sig_pcbit[12] = FindTransistor(1149,4107);
+    sig_pcbit[13] = FindTransistor(1143,4208);
+    sig_pcbit[14] = FindTransistor(1149,4251);
+    sig_pcbit[15] = FindTransistor(1143,4352);
+    sig_pla[0] = FindTransistor(1435,947);
+    sig_pla[1] = FindTransistor(852,2686);
+    sig_pla[2] = FindTransistor(935,2680);
+    sig_pla[3] = FindTransistor(990,2664);
+    sig_pla[4] = FindTransistor(1080,2392);
+    sig_pla[5] = FindTransistor(1204,2382);
+    sig_pla[6] = FindTransistor(1554,1673);
+    sig_pla[7] = FindTransistor(1459,2062);
+    sig_pla[8] = FindTransistor(1305,2410);
+    sig_pla[9] = FindTransistor(1323,2410);
+    sig_pla[10] = FindTransistor(1400,2410);
+    sig_pla[11] = FindTransistor(1586,2020);
+    sig_pla[12] = FindTransistor(1607,2020);
+    sig_pla[13] = FindTransistor(1693,1812);
+    sig_pla[14] = FindTransistor(1710,1891);
+    sig_pla[15] = FindTransistor(2282,2129);
+    sig_pla[16] = FindTransistor(1800,1640);
+    sig_pla[17] = FindTransistor(1744,2397);
+    sig_pla[18] = FindTransistor(1761,2397);
+    sig_pla[19] = FindTransistor(1852,1731);
+    sig_pla[20] = FindTransistor(1901,2397);
+    sig_pla[21] = FindTransistor(1651,2263);
+    sig_pla[22] = FindTransistor(2011,1103);
+    sig_pla[23] = FindTransistor(1917,2074);
+    sig_pla[24] = FindTransistor(2083,1678);
+    sig_pla[25] = FindTransistor(2022,2412);
+    sig_pla[26] = FindTransistor(2131,1641);
+    sig_pla[27] = FindTransistor(2083,2445);
+    sig_pla[28] = FindTransistor(2203,1815);
+    sig_pla[29] = FindTransistor(2225,1660);
+    sig_pla[30] = FindTransistor(2241,1660);
+    sig_pla[31] = FindTransistor(2263,1660);
+    sig_pla[32] = FindTransistor(2165,2539);
+    sig_pla[33] = FindTransistor(2343,1833);
+    sig_pla[34] = FindTransistor(2359,1833);
+    sig_pla[35] = FindTransistor(2381,1678);
+    sig_pla[36] = FindTransistor(2406,1776);
+    sig_pla[37] = FindTransistor(2343,1833);
+    sig_pla[38] = FindTransistor(2453,1660);
+    sig_pla[39] = FindTransistor(2403,2343);
+    sig_pla[40] = FindTransistor(2498,1852);
+    sig_pla[41] = FindTransistor(2447,1096);
+    sig_pla[42] = FindTransistor(2531,1678);
+    sig_pla[43] = FindTransistor(2554,1660);
+    sig_pla[44] = FindTransistor(2468,1089);
+    sig_pla[45] = FindTransistor(2667,2515);
+    sig_pla[46] = FindTransistor(3544,883);
+    sig_pla[47] = FindTransistor(2623,1678);
+    sig_pla[48] = FindTransistor(2643,2111);
+    sig_pla[49] = FindTransistor(2668,1701);
+    sig_pla[50] = FindTransistor(2694,1776);
+    sig_pla[51] = FindTransistor(2771,1080);
+    sig_pla[52] = FindTransistor(2805,1817);
+    sig_pla[53] = FindTransistor(2824,1702);
+    sig_pla[54] = FindTransistor(2869,1702);
+    sig_pla[55] = FindTransistor(2883,1849);
+    sig_pla[56] = FindTransistor(2962,846);
+    sig_pla[57] = FindTransistor(2788,2335);
+    sig_pla[58] = FindTransistor(2961,1817);
+    sig_pla[59] = FindTransistor(2979,1815);
+    sig_pla[60] = FindTransistor(2875,2307);
+    sig_pla[61] = FindTransistor(3084,1658);
+    sig_pla[62] = FindTransistor(3077,2704);
+    sig_pla[63] = FindTransistor(3196,856);
+    sig_pla[64] = FindTransistor(3209,1101);
+    sig_pla[65] = FindTransistor(3220,1108);
+    sig_pla[66] = FindTransistor(3240,1680);
+    sig_pla[67] = FindTransistor(3260,1658);
+    sig_pla[68] = FindTransistor(3289,2023);
+    sig_pla[69] = FindTransistor(3300,2023);
+    sig_pla[70] = FindTransistor(3321,2023);
+    sig_pla[71] = FindTransistor(3339,2023);
+    sig_pla[72] = FindTransistor(3372,1680);
+    sig_pla[73] = FindTransistor(3389,1774);
+    sig_pla[74] = FindTransistor(3419,1853);
+    sig_pla[75] = FindTransistor(3433,1774);
+    sig_pla[76] = FindTransistor(3444,2013);
+    sig_pla[77] = FindTransistor(3136,2170);
+    sig_pla[78] = FindTransistor(3520,1738);
+    sig_pla[79] = FindTransistor(3543,1738);
+    sig_pla[80] = FindTransistor(3566,1738);
+    sig_pla[81] = FindTransistor(3589,1640);
+    sig_pla[82] = FindTransistor(3615,1640);
+    sig_pla[84] = FindTransistor(3661,1738);
+    sig_pla[85] = FindTransistor(3691,1815);
+    sig_pla[86] = FindTransistor(3714,1738);
+    sig_pla[87] = FindTransistor(3729,1056);
+    sig_pla[88] = FindTransistor(3766,1738);
+    sig_pla[89] = FindTransistor(3788,1681);
+    sig_pla[90] = FindTransistor(3491,2349);
+    sig_pla[91] = FindTransistor(3894,2024);
+    sig_pla[92] = FindTransistor(3845,1681);
+    sig_pla[93] = FindTransistor(3524,2311);
+    sig_pla[94] = FindTransistor(3883,1681);
+    sig_pla[95] = FindTransistor(2953,1199);
+    sig_pla[96] = FindTransistor(3485,840);
+    sig_pla[97] = FindTransistor(3757,890);
+    sig_pla[98] = FindTransistor(4041,2331);
+    sig_rh_wr = FindTransistor(2365,3952);
+    sig_rl_wr = FindTransistor(2365,3464);
+    sig_r_p = FindTransistor(1506,3953);
+    sig_r_u = FindTransistor(2541,3252);
+    sig_r_v = FindTransistor(2541,3848);
+    sig_r_x1 = FindTransistor(1538,3547);
+    sig_ubus[0] = FindTransistor(2845,3175);
+    sig_ubus[1] = FindTransistor(2486,3344);
+    sig_ubus[2] = FindTransistor(2790,3175);
+    sig_ubus[3] = FindTransistor(2486,3488);
+    sig_ubus[4] = FindTransistor(2493,3501);
+    sig_ubus[5] = FindTransistor(2486,3632);
+    sig_ubus[6] = FindTransistor(2745,3175);
+    sig_ubus[7] = FindTransistor(2799,3175);
+    sig_u_v = FindTransistor(2617,2920);
+    sig_vbus[0] = FindTransistor(2493,3810);
+    sig_vbus[1] = FindTransistor(2486,3940);
+    sig_vbus[2] = FindTransistor(2493,3954);
+    sig_vbus[3] = FindTransistor(2486,4084);
+    sig_vbus[4] = FindTransistor(2493,4098);
+    sig_vbus[5] = FindTransistor(2486,4228);
+    sig_vbus[6] = FindTransistor(2493,4242);
+    sig_vbus[7] = FindTransistor(2486,4372);
+    sig__instr[0] = FindTransistor(4185,1222);
+    sig__instr[1] = FindTransistor(4185,1274);
+    sig__instr[2] = FindTransistor(4185,1326);
+    sig__instr[3] = FindTransistor(4185,1483);
+    sig__instr[4] = FindTransistor(4185,1535);
+    sig__instr[5] = FindTransistor(4185,1587);
+    sig__instr[6] = FindTransistor(4185,1378);
+    sig__instr[7] = FindTransistor(4185,1431);
+    sig_dbus[0] = FindTransistor(4300,2358);
+    sig_dbus[1] = FindTransistor(4333,2349);
+    sig_dbus[2] = FindTransistor(4350,2349);
+    sig_dbus[3] = FindTransistor(4270,2287);
+    sig_dbus[4] = FindTransistor(4299,2288);
+    sig_dbus[5] = FindTransistor(4317,2288);
+    sig_dbus[6] = FindTransistor(4236,2287);
+    sig_dbus[7] = FindTransistor(4379,2348);
+    sig_pla[83] = FindTransistor(3603,1856);
+    sig_regbit[0] = FindTransistor(1575,3212);
+    sig_regbit[1] = FindTransistor(2365,3320);
+    sig_regbit[2] = FindTransistor(1575,3356);
+    sig_regbit[3] = FindTransistor(2365,3464);
+    sig_regbit[4] = FindTransistor(1575,3500);
+    sig_regbit[5] = FindTransistor(2365,3608);
+    sig_regbit[6] = FindTransistor(1575,3644);
+    sig_regbit[7] = FindTransistor(2365,3752);
+    sig_regbit[8] = FindTransistor(1575,3808);
+    sig_regbit[9] = FindTransistor(1575,3935);
+    sig_regbit[10] = FindTransistor(1575,3952);
+    sig_regbit[11] = FindTransistor(2365,4060);
+    sig_regbit[12] = FindTransistor(1575,4096);
+    sig_regbit[13] = FindTransistor(2365,4204);
+    sig_regbit[14] = FindTransistor(1575,4240);
+    sig_regbit[15] = FindTransistor(2365,4348);
 // unsigned int sig_trap2 = FindTransistor(1082, 1325);
 // unsigned int sig_trap2_up = FindTransistor(1096, 1325);
 // unsigned int sig_trap2_down = FindTransistor(1103, 1346);
