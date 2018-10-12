@@ -51,7 +51,7 @@ uint64_t GetTickCount()
 unsigned int thread_count = 3;
 #endif
 
-unsigned int DIVISOR = 600; // the lower the faster is clock, 1000 is lowest value I achieved
+unsigned int DIVISOR = 1000; // the lower the faster is clock, 1000 is lowest value I achieved
 #define MINSHAPESIZE 25 // if a shape is smaller than this it gets reported
 
 #define VCC 5.0f
@@ -214,6 +214,7 @@ class Signal
 public:
    Signal();
    void Homogenize();
+   float ReadOutput();
    vector<Connection> connections;
    float signalarea;
    bool ignore;
@@ -561,6 +562,26 @@ void Pad::SetInputSignal(int signal)
             transistors[connections[i].index].drain = origsignal;
       }
    }
+}
+
+float Signal::ReadOutput()
+{
+   float shouldbe = 0.0f, reallywas = 0.0f;
+   for (unsigned int i = 0; i < connections.size(); i++)
+   {
+      if (connections[i].terminal == SOURCE)
+      {
+         shouldbe += transistors[connections[i].index].area;
+         reallywas += transistors[connections[i].index].sourcecharge;
+      }
+      else if (connections[i].terminal == DRAIN)
+      {
+         shouldbe += transistors[connections[i].index].area;
+         reallywas += transistors[connections[i].index].draincharge;
+      }
+   }
+
+   return reallywas / shouldbe;
 }
 
 float Pad::ReadOutput()
@@ -1667,31 +1688,41 @@ void write_perfect_z80_file(string filename) {
    ::fputs("netlist_z80_transdefs[] = {\n", trfile);
    for (int i = 0; i < transistors.size(); i++) {
       Transistor t = transistors[i];
+      int gate   = t.gate;
+      int source = t.source;
+      int drain  = t.drain;
       if (t.source == SIG_GND && t.gate == SIG_GND) {
          printf("Warning: t%d is a protection diode (g=%d, s=%d, d=%d) - excluding\n", i, t.gate, t.source, t.drain);
-         continue;
+         gate = SIG_GND;
+         source = SIG_GND;
+         drain = SIG_GND;
       }
       if (t.source == 0) {
          printf("Warning: t%d has disconnected source (area = %d) - excluding\n", i, (int) t.area);
-         continue;
+         gate = SIG_GND;
+         source = SIG_GND;
+         drain = SIG_GND;
       }
       if (t.drain == 0) {
          printf("Warning: t%d has disconnected drain (area = %d) - excluding\n", i, (int) t.area);
-         continue;
+         gate = SIG_GND;
+         source = SIG_GND;
+         drain = SIG_GND;
       }
       if (t.gate == 0) {
          printf("Warning: t%d has disconnected gate (area = %d) - excluding\n", i, (int) t.area);
-         continue;
+         gate = SIG_GND;
+         source = SIG_GND;
+         drain = SIG_GND;
       }
       if ((t.source != t.gate || t.drain != SIG_VCC) && t.depletion) {
          printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? replacing signal %d with ground in netlist\n", i, t.gate, t.source, t.drain, t.drain);
          // All the traps have a grounded source
          force_to_ground.push_back(t.drain);
-         continue;
+         gate = SIG_GND;
+         source = SIG_GND;
+         drain = SIG_GND;
       }
-      int gate   = t.gate;
-      int source = t.source;
-      int drain  = t.drain;
       for (int j = 0; j < force_to_ground.size(); j++) {
          int trap = force_to_ground[j];
          if (gate == trap ) {
@@ -1729,6 +1760,21 @@ int main(int argc, char *argv[])
    // Simulated Z80 program
 
    int mem_addr = 0;
+
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x31;
+   memory[mem_addr++] = 0x80;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x3e;
+   memory[mem_addr++] = 0xcc;
+   memory[mem_addr++] = 0xed;
+   memory[mem_addr++] = 0x47;
+   memory[mem_addr++] = 0xed;
+   memory[mem_addr++] = 0x5e;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0xfb;
+
+#if 0
 
    // 0x00,                    // NOP
    // 0x31, 0x00, 0x01,        // LD SP,0x0100
@@ -1931,6 +1977,8 @@ int main(int argc, char *argv[])
    memory[mem_addr++] = 0xe3;
    memory[mem_addr++] = 0x76;
    memory[mem_addr++] = 0x00;
+
+#endif
 
    printf("Test program contains %d bytes\n", mem_addr);
 
@@ -2669,6 +2717,7 @@ int main(int argc, char *argv[])
    int lastadr = 0;
    int lastdata = 0;
    int pomadr = 0;
+   bool pom_m1 = true;
    bool pom_wr = true;
    bool pom_rd = true;
    bool pom_rst = true;
@@ -3112,7 +3161,7 @@ int main(int argc, char *argv[])
             }
             else if (pads[j].origsignal == PAD__INT)
             {
-                  pads[j].SetInputSignal(SIG_VCC);
+                  pads[j].SetInputSignal(SIG_GND);
             }
             else if (pads[j].origsignal == PAD__NMI)
             {
@@ -3126,7 +3175,26 @@ int main(int argc, char *argv[])
          else if (pads[j].type == PAD_BIDIRECTIONAL) // we have to pull data bus up or down when memory, I/O or interrupt instruction is read
          {
             {
-               if (pom_rd) // nothing is read
+               if (!pom_m1 && !pom_iorq)
+               {
+                     if (
+                        pads[j].origsignal == PAD_D7 ||
+                        pads[j].origsignal == PAD_D6 ||
+                        pads[j].origsignal == PAD_D5 ||
+                        pads[j].origsignal == PAD_D3 ||
+                        pads[j].origsignal == PAD_D0
+                        ) {
+                        pads[j].SetInputSignal(SIG_VCC);
+                     }
+                     if (
+                        pads[j].origsignal == PAD_D4 ||
+                        pads[j].origsignal == PAD_D2 ||
+                        pads[j].origsignal == PAD_D1
+                        ) {
+                        pads[j].SetInputSignal(SIG_GND);
+                     }
+               }
+               else if (pom_rd) // nothing is read
                {
                   pads[j].SetInputSignal(SIG_FLOATING);
                }
@@ -3324,7 +3392,10 @@ int main(int argc, char *argv[])
                printf("%c ", pom2);
             }
             if (pads[j].origsignal == PAD__M1)
+            {
+               pom_m1 = (pom2 == '1');
                printf("%c", pom2);
+            }
             if (pads[j].origsignal == PAD__RFSH)
                printf("%c ", pom2);
             if (pads[j].origsignal == PAD__RD)
@@ -3617,6 +3688,31 @@ int main(int argc, char *argv[])
             break;
 
       }
+
+#if 0
+      if ((i % DIVISOR) == (DIVISOR - 1)) {
+         int pc = GetRegVal(reg_pch) << 8 | GetRegVal(reg_pcl);
+         printf("## ========================================================================\n");
+         printf("## PC=%04X\n",pc);
+
+#if 0
+         for (int sn = 0; sn < signals.size(); sn++) {
+            float val = signals[sn].ReadOutput();
+            char sv = '?';
+            if (val < -0.05f) {
+               sv = '0';
+            } else if (val > 0.05f) {
+               sv = '1';
+            }
+            printf("## %d = %c\n", sn, sv);
+         }
+#endif
+         for (int tn = 2063; tn < transistors.size(); tn++) {
+            printf("## %d = %d (%04x)\n", tn, transistors[tn].IsOn(), pc);
+         }
+      }
+#endif
+
       totcycles = i;
    }
 
