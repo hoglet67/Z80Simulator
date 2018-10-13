@@ -146,6 +146,10 @@ png::image<png::rgb_pixel> bd;
 int shapesize;
 bool objectfound;
 int nextsignal;
+int x1;
+int y1;
+int x2;
+int y2;
 
 #define GATE 1
 #define DRAIN 2
@@ -299,6 +303,8 @@ public:
    int Valuate();
 
    int x, y;
+   int x1, y1; // TL of bounding box
+   int x2, y2; // BR of bounding box
    int gate, source, drain;
    int sourcelen, drainlen, otherlen;
    float area;
@@ -1110,6 +1116,20 @@ void CheckTransistor(int x, int y)
    pombuf[y * size_x + x] |= TEMPORARY;
    shapesize++;
 
+   // Record the min/max bounding box
+   if (x < x1) {
+      x1 = x;
+   }
+   if (y < y1) {
+      y1 = y;
+   }
+   if (x > x2) {
+      x2 = x;
+   }
+   if (y > y2) {
+      y2 = y;
+   }
+
    if (x)
    {
       if ((pombuf[y * size_x + x - 1] & TRANSISTORS))
@@ -1679,6 +1699,75 @@ void write_nodenames_file(string filename) {
 }
 
 
+void check_transistor_spacing() {
+   for (unsigned int i = 0; i < transistors.size(); i++)
+   {
+
+      Transistor ti = transistors[i];
+      if (ti.source == SIG_GND) {
+
+         int minx = 1000000;
+         int miny = 1000000;
+         for (unsigned int j = 0; j < transistors.size(); j++)
+         {
+            if (j == i) {
+               continue;
+            }
+
+            Transistor tj = transistors[j];
+
+            // Do the rectangles overlap in the X dimension
+            //if ((ti.x1 >= tj.x1 && ti.x1 <= tj.x2) || (ti.x2 >= tj.x1 && ti.x2 <= tj.x2)) {
+            if ((ti.x1 == tj.x1) && (ti.x2 == tj.x2)) {
+               int dy1 = ti.y1 - tj.y2;
+               int dy2 = ti.y2 - tj.y1;
+               if (dy1 < 0) {
+                  dy1 = -dy1;
+               }
+               if (dy2 < 0) {
+                  dy2 = -dy2;
+               }
+               if (dy1 < miny) {
+                  miny = dy1;
+               }
+               if (dy2 < miny) {
+                  miny = dy2;
+               }
+            }
+
+            // Do the rectangles overlap in the Y dimension
+            if ((ti.y1 == tj.y1) && (ti.y2 == tj.y2)) {
+               int dx1 = ti.x1 - tj.x2;
+               int dx2 = ti.x2 - tj.x1;
+               if (dx1 < 0) {
+                  dx1 = -dx1;
+               }
+               if (dx2 < 0) {
+                  dx2 = -dx2;
+               }
+               if (dx1 < minx) {
+                  minx = dx1;
+               }
+               if (dx2 < minx) {
+                  minx = dx2;
+               }
+            }
+         }
+         int sx = ti.x2 - ti.x1 + 1;
+         int sy = ti.y2 - ti.y1 + 1;
+         int min;
+         if (sx > sy) {
+            min = miny;
+         } else if (sy > sx) {
+            min = minx;
+         } else {
+            min = (minx < miny) ? minx : miny;
+         }
+         printf("t%4d (%4d, %4d, %4d, %4d) spacing min %d\n", i, ti.x1, ti.y1, sx, sy, min);
+      }
+   }
+}
+
 void write_transdefs_file(string filename) {
    // The format here is
    //   name
@@ -1732,14 +1821,6 @@ void write_transdefs_file(string filename) {
             force_to_ground.push_back(t.drain);
             continue;
          }
-         int sx = t.x;
-         while (pombuf[t.y * size_x + sx] & TRANSISTORS) {
-            sx++;
-         }
-         int sy = t.y;
-         while (pombuf[sy * size_x + t.x] & TRANSISTORS) {
-            sy++;
-         }
          int gate   = t.gate;
          int source = t.source;
          int drain  = t.drain;
@@ -1759,7 +1840,7 @@ void write_transdefs_file(string filename) {
             }
          }
          ::fprintf(trfile, "['t%d',%d,%d,%d,", i, gate, source, drain);
-         ::fprintf(trfile, "[%d,%d,%d,%d],", t.x, sx, size_y - sy - 1, size_y - t.y - 1);
+         ::fprintf(trfile, "[%d,%d,%d,%d],", t.x1, (t.x2 + 1), (size_y - 1) - (t.y2 + 1), (size_y - 1) - t.y1);
          ::fprintf(trfile, "[%d,%d,%d,%d,%d],%s,],\n", 1, 1, 1, 1, (int) t.area, (weak ? "true" : "false"));
       } else {
          if (!t.depletion) {
@@ -2494,6 +2575,11 @@ int main(int argc, char *argv[])
             gate = source = drain = 0;
             sourcelen = drainlen = otherlen = 0;
             shapesize = 0;
+            // min/max bounding box
+            x1 = size_x - 1;
+            y1 = size_y - 1;
+            x2 = 0;
+            y2 = 0;
             CheckTransistor(x, y);
             if (!source)
                if (verbous)
@@ -2562,6 +2648,10 @@ int main(int argc, char *argv[])
             Transistor pomtran;
             pomtran.x = x;
             pomtran.y = y;
+            pomtran.x1 = x1;
+            pomtran.y1 = y1;
+            pomtran.x2 = x2;
+            pomtran.y2 = y2;
             pomtran.area = (float) shapesize;
             // here the area of big transistors is somewhat scaled down to speed the simulation up little bit
          // if (pomtran.area > 25.0)
@@ -3441,6 +3531,8 @@ int main(int argc, char *argv[])
    printf("----------------- Writing netlist files----------------\n");
    printf("-------------------------------------------------------\n");
 
+   check_transistor_spacing();
+
    // Annotate the transitors with their pullup status
    update_pullup_status();
 
@@ -3461,7 +3553,7 @@ int main(int argc, char *argv[])
    delete signals_poly;
    delete signals_metal;
 
-   // ::exit(1);
+   ::exit(1);
 
    // ======================================================================
    // ============================= Simulation =============================
