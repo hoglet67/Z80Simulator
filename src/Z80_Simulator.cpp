@@ -1700,25 +1700,38 @@ void write_nodenames_file(string filename) {
 
 
 void check_transistor_spacing() {
-   for (unsigned int i = 0; i < transistors.size(); i++)
-   {
+   for (unsigned int i = 0; i < transistors.size(); i++) {
 
       Transistor ti = transistors[i];
-      if (ti.source == SIG_GND) {
+
+      int count1 = 0;
+      int count2 = 0;
+      for (unsigned int j = 0; j < ti.drainconnections.size(); j++) {
+         if (ti.drainconnections[j].index != i) {
+            count1++;
+            if (ti.drainconnections[j].terminal != GATE) {
+               count2++;
+            }
+         }
+      }
+
+      // Look for one or two connections to other sources/drains
+      if (ti.source == SIG_GND && (count1 == 1 || count1 == 2) && count1 == count2) {
 
          int minx = 1000000;
          int miny = 1000000;
-         for (unsigned int j = 0; j < transistors.size(); j++)
+
+
+         for (unsigned int j = 0; j < ti.drainconnections.size(); j++)
          {
-            if (j == i) {
+            if (ti.drainconnections[j].index == i) {
                continue;
             }
 
-            Transistor tj = transistors[j];
+            Transistor tj = transistors[ti.drainconnections[j].index];
 
             // Do the rectangles overlap in the X dimension
-            //if ((ti.x1 >= tj.x1 && ti.x1 <= tj.x2) || (ti.x2 >= tj.x1 && ti.x2 <= tj.x2)) {
-            if ((ti.x1 == tj.x1) && (ti.x2 == tj.x2)) {
+            if ((ti.x1 >= tj.x1 && ti.x1 <= tj.x2) || (ti.x2 >= tj.x1 && ti.x2 <= tj.x2)) {
                int dy1 = ti.y1 - tj.y2;
                int dy2 = ti.y2 - tj.y1;
                if (dy1 < 0) {
@@ -1736,7 +1749,7 @@ void check_transistor_spacing() {
             }
 
             // Do the rectangles overlap in the Y dimension
-            if ((ti.y1 == tj.y1) && (ti.y2 == tj.y2)) {
+            if ((ti.y1 >= tj.y1 && ti.y1 <= tj.y2) || (ti.y2 >= tj.y1 && ti.y2 <= tj.y2)) {
                int dx1 = ti.x1 - tj.x2;
                int dx2 = ti.x2 - tj.x1;
                if (dx1 < 0) {
@@ -1763,7 +1776,7 @@ void check_transistor_spacing() {
          } else {
             min = (minx < miny) ? minx : miny;
          }
-         printf("t%4d (%4d, %4d, %4d, %4d) spacing min %d\n", i, ti.x1, ti.y1, sx, sy, min);
+         printf("t%4d (%4d, %4d, %4d, %4d) %d %d spacing min %d\n", i, ti.x1, ti.y1, sx, sy, count1, count2, min);
       }
    }
 }
@@ -1815,15 +1828,17 @@ void write_transdefs_file(string filename) {
                printf("Warning: t%d has unusual connections (g=%d, s=%d, d=%d)\n", i, t.gate, t.source, t.drain);
             }
          }
+         int gate   = t.gate;
+         int source = t.source;
+         int drain  = t.drain;
          if (t.depletion) {
             printf("Warning: t%d is depletion mode (g=%d, s=%d, d=%d) but not a pullup; trap? replacing signal %d with ground in netlist\n", i, t.gate, t.source, t.drain, t.drain);
             // All the traps have a grounded source
             force_to_ground.push_back(t.drain);
-            continue;
+            gate = SIG_GND;
+            drain = SIG_GND;
+            source = SIG_GND;
          }
-         int gate   = t.gate;
-         int source = t.source;
-         int drain  = t.drain;
          for (int j = 0; j < force_to_ground.size(); j++) {
             int trap = force_to_ground[j];
             if (gate == trap ) {
