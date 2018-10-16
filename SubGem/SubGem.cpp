@@ -1,5 +1,6 @@
 #pragma warning(disable:4786)
 
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <iterator>
@@ -295,7 +296,12 @@ void Phase1(
    // The valid vertex from S with the same label as that of the candidate partition is chosen as the key vertex.
    // If multiple valid vertices from S have the same label at this point, an arbitrary one can be chosen to be K.
 
-   for (v=sub.list[type]; v; v=v->next) if (v->label==label && v->valid) key = v;
+   int set = 0;
+   for (v=sub.list[type]; v; v=v->next) if (v->label==label && v->valid) {key = v; set = 1;};
+   if (!set) {
+      printf("Key not set in phase1\n");
+      exit(1);
+   }
 }
 
 //////////////////////////////////////////////////////////////////////////////

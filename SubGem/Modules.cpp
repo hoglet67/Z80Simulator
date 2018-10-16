@@ -1,4 +1,4 @@
-#pragma warning(disable:4786)
+pragma warning(disable:4786)
 
 #include <stdio.h>
 #include <iterator>
@@ -124,37 +124,41 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       switch (cmd) {
       case CMD_VERILOG:
          // TODO
+         fprintf(fp,
+                 "LATCH_PP latch_pp_%d ("
+                 ".o(o[%d]), "
+                 ".s(%s), "
+                 ".r(%s);\n",
+                 sub1->GetMate(100),
+                 sub1->GetMate(100),
+                 sub1->GetRoot(101),
+                 sub1->GetRoot(102));
          break;
       case CMD_PORTS:
-         sub1->AddPort(100, TT_IN);
-         sub1->AddPort(101, TT_IN);
-         sub1->AddPort(102, TT_IN);
-         sub1->AddPort(103, TT_IN);
-         sub1->AddPort(104, TT_IN);
-         sub1->AddPort(105, TT_IN);
-         sub1->AddPort(106, TT_IN);
-         sub1->AddPort(107, TT_IN);
-         sub1->AddPort(108, TT_OUT);
+         sub1->AddPort(100, TT_OUT); // out
+         sub1->AddPort(101, TT_IN); // set
+         sub1->AddPort(102, TT_IN); // reset
          break;
       case CMD_LOGIC:
-         sub2->AddPull(108);
-         sub2->AddTran(207, 107, 108, 116);
-         sub2->AddTran(206, 106, 116, 115);
-         sub2->AddTran(205, 105, 115, 114);
-         sub2->AddTran(204, 104, 114, 113);
-         sub2->AddTran(203, 103, 113, 112);
-         sub2->AddTran(202, 102, 112, 111);
-         sub2->AddTran(201, 101, 111, 110);
-         sub2->AddTran(200, 100, 110, NODE_vss);
+         sub2->AddPull(110);
+         sub2->AddPull(111);
+         sub2->AddTran(200, 111, 110, NODE_vss);
+         sub2->AddTran(201, 110, 111, NODE_vss);
+         sub2->AddTran(202, NODE_clk, 101, 110);
+         sub2->AddTran(203, NODE_clk, 102, 111);
+         sub2->AddTran(204, 110, 100, NODE_vss);
+         sub2->AddTran(205, 111, 100, NODE_vcc);
       }
-      return "AND8";
+      return "Latch with push/pull output";
    }
 
-
+   
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
          // TODO
+         fprintf(fp, "assign o[%d]=(%s)^(%s);\n",
+                 sub1->GetMate(100), sub1->GetRoot(101), sub1->GetRoot(102));
          break;
       case CMD_PORTS:
          sub1->AddPort(100, TT_IN);  // A
@@ -179,6 +183,8 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       switch (cmd) {
       case CMD_VERILOG:
          // TODO
+         fprintf(fp, "assign o[%d]=(%s)~^(%s);\n",
+                 sub1->GetMate(100), sub1->GetRoot(101), sub1->GetRoot(102));
          break;
       case CMD_PORTS:
          sub1->AddPort(100, TT_IN);  // A
@@ -201,6 +207,35 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       switch (cmd) {
       case CMD_VERILOG:
          // TODO
+         fprintf(fp, "assign o[%d] = ~%s;\n",
+                 sub1->GetMate(101), sub1->GetRoot(100));
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_IN);
+         sub1->AddPort(101, TT_OUT);
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(110);
+         sub2->AddTran(200, 100, 110, NODE_vss);
+         sub2->AddTran(201, 100, 101, NODE_vss);
+         sub2->AddTran(202, 110, 101, NODE_vcc);
+      }
+      return "Superbuffer";
+   }
+
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         fprintf(fp,
+                 "REG register_%d ("
+                 ".q(o[%d]), "
+                 ".nq(o[%d]), "
+                 ".clk(%s);\n",
+                 sub1->GetMate(100),
+                 sub1->GetMate(100),
+                 sub1->GetMate(101),
+                 sub1->GetRoot(102));
          break;
       case CMD_PORTS:
          sub1->AddPort(100, TT_OUT); // bus +
@@ -218,6 +253,181 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       return "Register bit";
    }
    
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         fprintf(fp,
+                 "LATCH latch_%d ("
+                 ".q(o[%d]), "
+                 ".nq(o[%d]), "
+                 ".data(%s), "
+                 ".clk(%s);\n",
+                 sub1->GetMate(100),
+                 sub1->GetMate(100),
+                 sub1->GetMate(101),
+                 sub1->GetRoot(102),
+                 sub1->GetRoot(103));
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_OUT); // out +
+         sub1->AddPort(101, TT_OUT); // out -
+         sub1->AddPort(102, TT_IN);  // data
+         sub1->AddPort(103, TT_IN);  // clock
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(100);
+         sub2->AddPull(101);
+         sub2->AddTran(200, 102, 100, NODE_vss);
+         sub2->AddTran(201, 100, 101, NODE_vss);
+         sub2->AddTran(202, 103, 101, 102);
+      }
+      return "Latch";
+   }
+   
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         fprintf(fp,
+                 "LATCH_CLK latch_clk_%d ("
+                 ".q(o[%d]), "
+                 ".nq(o[%d]), "
+                 ".data(%s), "
+                 ".clk(i[%d]);\n",
+                 sub1->GetMate(100),
+                 sub1->GetMate(100),
+                 sub1->GetMate(101),
+                 sub1->GetRoot(102),
+                 NODE_clk);
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_OUT); // out +
+         sub1->AddPort(101, TT_OUT); // out -
+         sub1->AddPort(102, TT_IN);  // data
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(100);
+         sub2->AddPull(101);
+         sub2->AddTran(200, 102, 100, NODE_vss);
+         sub2->AddTran(201, 100, 101, NODE_vss);
+         sub2->AddTran(202, NODE_clk, 101, 102);
+      }
+      return "Latch (clk)";
+   }
+
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         fprintf(fp,
+                 "LATCH_RS latch_rs_%d ("
+                 ".q(o[%d]), "
+                 ".nq(o[%d]), "
+                 ".r(%s), "
+                 ".s(%s);\n",
+                 sub1->GetMate(100),
+                 sub1->GetMate(100),
+                 sub1->GetMate(101),
+                 sub1->GetRoot(102),
+                 sub1->GetRoot(103));
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_OUT); // out
+         sub1->AddPort(101, TT_OUT); // /out
+         sub1->AddPort(102, TT_IN); // set
+         sub1->AddPort(103, TT_IN); // reset
+         sub1->AddPort(104, TT_IN); // clock
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(100);
+         sub2->AddPull(101);
+         sub2->AddTran(200, 100, 101, NODE_vss);
+         sub2->AddTran(201, 101, 100, NODE_vss);
+         sub2->AddTran(202, 104, 102, 100);
+         sub2->AddTran(203, 104, 103, 101);
+      }
+      return "RS Latch with complementary outputs";
+   }
+   
+
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         fprintf(fp,
+                 "STORAGE storage_%d ("
+                 ".o(o[%d]), "
+                 ".i(%s), "
+                 ".clk(%s);\n",
+                 sub1->GetMate(100),
+                 sub1->GetMate(100),
+                 sub1->GetRoot(101),
+                 sub1->GetRoot(102));
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_OUT); // output
+         sub1->AddPort(101, TT_IN);  // data input
+         sub1->AddPort(102, TT_IN);  // clock
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(100);
+         sub2->AddTran(200, 102, 101, 110);
+         sub2->AddTran(201, 110, 100, NODE_vss);
+      }
+      return "Storage node";
+   }
+
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         // TODO
+         fprintf(fp,
+                 "STORAGE_CLK storage_clk_%d ("
+                 ".o(o[%d]), "
+                 ".i(%s), "
+                 ".clk(i[%d]);\n",
+                 sub1->GetMate(100),
+                 sub1->GetMate(100),
+                 sub1->GetRoot(101),
+                 NODE_clk);
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(100, TT_OUT); // output
+         sub1->AddPort(101, TT_IN);  // data input
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(100);
+         sub2->AddTran(200, NODE_clk, 101, 110);
+         sub2->AddTran(201, 110, 100, NODE_vss);
+      }
+      return "Storage node (clk)";
+   }
+      
+#if 0
+   // Not sure what kaming something a pad does
+   if (ord==idx++) {
+      switch (cmd) {
+      case CMD_VERILOG:
+         if (sub1->GetKeep(102))
+            fprintf(fp, "assign o[%d] = ~%s;\n",
+                                         sub1->GetMate(102), sub1->GetRoot(101));
+         break;
+      case CMD_UNARY:
+         UnaryInv(sub1->GetMate(102), sub1->GetMate(101));
+         break;
+      case CMD_PORTS:
+         sub1->AddPort(102, TT_OUT);
+         sub1->AddPort(101, TT_PAD);
+         break;
+      case CMD_LOGIC:
+         sub2->AddPull(102);
+         sub2->AddTran(200, 101, NODE_vss, 102);
+      }
+      return "Pad input";
+   }
+
+
    
 #if 0
    if (ord==idx++) {

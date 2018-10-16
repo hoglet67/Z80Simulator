@@ -10,8 +10,8 @@
 
 #include "SubGem.h"
 
-#define NUM_TRANS 6810
-#define NUM_NODES 3599
+#define NUM_TRANS 6813
+#define NUM_NODES 3597
 
 char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp);
 
@@ -19,6 +19,39 @@ char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp);
 // These nodes must not be removed by inverter/buffer optimisation
 
 int Required[] = {
+   3,  // clk
+   5,  // ab0
+   6,  // ab1
+   7,  // ab2
+   8,  // ab3
+   9,  // ab4
+   10, // ab5
+   11, // ab6
+   12, // ab7
+   13, // ab8
+   14, // ab9
+   15, // ab10
+   16, // ab11
+   17, // ab12
+   18, // ab13
+   19, // ab14
+   20, // ab15
+   26, // _m1
+   27, // _rd
+   28, // _wr
+   29, // _mreq
+   30, // _iorq
+   31, // _rfsh
+   32, // db0
+   33, // db1
+   34, // db2
+   35, // db3
+   36, // db4
+   37, // db5
+   38, // db6
+   39, // db7
+   40, // _halt
+   41, // _busak
    0
 };
 
@@ -177,24 +210,38 @@ void OptimiseBuffers(GRAPH& cpu) { // Inverter/buffer optimisation
    int i, n, d;
    VERT *v;
 
+   printf("Optimise phase 1\n");
+   fflush(NULL);
    // Gather connectivity of inverters and buffers
    for (v=cpu.list[LST_DEVS]; v; v=v->next) {
       if (v->type<VT_MODULE_BASE) continue;
       MAPPING m(v);
       Module(&m, v->type, CMD_UNARY, 0);
    }
+   printf("Optimise phase 1\n");
+   fflush(NULL);
    // Nets which should not be optimised away
    for (i=0; Required[i]; i++) {
       n = Required[i];
       Net[n].rqd = 1;
       Net[n].opt = 0;
    }
+   printf("Optimise phase 3\n");
+   fflush(NULL);
    // Trace driver of buffer/inverter chains
    for (n=0; n<NUM_NODES; n++) {
-      for(i=0, d=n; Net[d].opt; d=Net[d].src) i^=Net[d].inv;
+      printf("%d\n", n);
+      fflush(NULL);
+      for(i=0, d=n; Net[d].opt; d=Net[d].src) {
+         i^=Net[d].inv;
+         printf("   %d\n", d);
+         fflush(NULL);
+      }
       Net[n].src = d;
       Net[n].inv = i;
    }
+   printf("Optimise done\n");
+   fflush(NULL);
 }
 
 void FindModules(GRAPH& cpu) { // SubGemini top-level
@@ -206,6 +253,7 @@ void FindModules(GRAPH& cpu) { // SubGemini top-level
       Module(&sub, ord, CMD_LOGIC, 0); // Transistors and wires
       int n = Replace(cpu, sub, ord++); // Call SubGemini
       printf("%4d  %s\n", n, s);
+      fflush(NULL);
    }
 }
 
