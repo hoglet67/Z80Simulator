@@ -1231,6 +1231,56 @@ void SetupPad(int x, int y, int signalnum, int padtype)
 #define DIR_L 2
 #define DIR_U 3
 
+void output_vertex(FILE *segfile, int tmp_x, int tmp_y, int vertex_x, int vertex_y, int len_in_vx, int debug) {
+   // Calculate the difference between tmp and the last vertex
+   int tx = tmp_x - vertex_x;
+   if (tx < 0) {
+      tx = -tx;
+   }
+   int ty = tmp_y - vertex_y;
+   if (ty < 0) {
+      ty = -ty;
+   }
+   // Fix diagonals of length 1 by adding an extra point
+   if (tx == 1 && ty == 1) {
+      int w_x;
+      int w_y;
+      if (tmp_x > vertex_x) {
+         if (tmp_y > vertex_y) {
+            // case 1
+            w_x = vertex_x;
+            w_y = tmp_y;
+         } else {
+            // case 2
+            w_x = tmp_x;
+            w_y = vertex_y;
+         }
+      } else {
+         if (tmp_y > vertex_y) {
+            // case 3
+            w_x = tmp_x;
+            w_y = vertex_y;
+         } else {
+                     // case 4
+            w_x = vertex_x;
+            w_y = tmp_y;
+         }
+      }
+      if (debug) {
+         printf("outputing extra vertex %d, %d\n", w_x, w_y);
+      }
+      // Output extra vertex to form a corner
+      ::fprintf(segfile, ",%d,%d", w_x, size_y - w_y - 1);
+      len_in_vx++;
+   }
+   if (debug) {
+      printf("outputing vertex %d, %d and updating tmp\n", tmp_x, tmp_y);
+   }
+   // Output the last orthogonal point as a vertex
+   ::fprintf(segfile, ",%d,%d", tmp_x, size_y - tmp_y - 1);
+   len_in_vx++;
+}
+
 void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y) {
    int sig = sigs[start_y * size_x + start_x];
    ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
@@ -1278,10 +1328,6 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
       int point = 0;
       if (x >= min_x && x < max_x && y >= min_y && y < max_y) {
          point = sigs[y * size_x + x];
-      }
-
-      // If point is on the boundary, mark as visited
-      if (point) {
       }
 
       // Turn accordingly
@@ -1334,7 +1380,7 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
             printf("point %d, %d; dx = %d; dy = %d; dd = %d; ", x, y, dx, dy, dd);
          }
 
-         // Based on that difference, choose whether to updated tmp or vertex
+         // Based on that difference, choose whether to update tmp or vertex
          if (dx == 0 || dy == 0 || dd == 0) {
             tmp_x = x;
             tmp_y = y;
@@ -1342,16 +1388,11 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
                printf("updating tmp\n");
             }
          } else if ((dd > 1) || (dd == 1 && ((tx == 0 && ty >= 2) || (ty == 0 && tx >= 2)))) {
+            output_vertex(segfile, tmp_x, tmp_y, vertex_x, vertex_y, len_in_vx, debug);
             vertex_x = tmp_x;
             vertex_y = tmp_y;
             tmp_x = x;
             tmp_y = y;
-            if (debug) {
-               printf("outputing vertex %d, %d and updating tmp\n", vertex_x, vertex_y);
-            }
-            // Output the last orthginal point as a vertex
-            ::fprintf(segfile, ",%d,%d", vertex_x, size_y - vertex_y - 1);
-            len_in_vx++;
          } else {
             if (debug) {
                printf("\n");
@@ -1365,11 +1406,7 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
 
    // flush the last point, if it is different to the starting point
    if ((tmp_x != start_x || tmp_y != start_y) && (tmp_x != vertex_x || tmp_y != vertex_y)) {
-      if (debug) {
-         printf("outputing vertex %d, %d (final point flush)\n", tmp_x, tmp_y);
-      }
-      ::fprintf(segfile, ",%d,%d", tmp_x, size_y - tmp_y - 1);
-      len_in_vx++;
+      output_vertex(segfile, tmp_x, tmp_y, vertex_x, vertex_y, len_in_vx, debug);
    }
 
    printf("len_in_px = %d; len_in_vx = %d\n", len_in_px, len_in_vx);
