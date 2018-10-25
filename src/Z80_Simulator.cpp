@@ -1320,6 +1320,15 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
          if (dd < 0) {
             dd = -dd;
          }
+         // Calculate the difference between tmp and the last vertex
+         int tx = tmp_x - vertex_x;
+         if (tx < 0) {
+            tx = -tx;
+         }
+         int ty = tmp_y - vertex_y;
+         if (ty < 0) {
+            ty = -ty;
+         }
 
          if (debug) {
             printf("point %d, %d; dx = %d; dy = %d; dd = %d; ", x, y, dx, dy, dd);
@@ -1332,7 +1341,7 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
             if (debug) {
                printf("updating tmp\n");
             }
-         } else if (dd > 1) {
+         } else if ((dd > 1) || (dd == 1 && ((tx == 0 && ty >= 2) || (ty == 0 && tx >= 2)))) {
             vertex_x = tmp_x;
             vertex_y = tmp_y;
             tmp_x = x;
