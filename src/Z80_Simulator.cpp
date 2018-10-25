@@ -1246,7 +1246,7 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
    int x         = start_x;
    int y         = start_y;
    int dir       = DIR_R;
-   int vertex_x  = y; // The last vertex that was output
+   int vertex_x  = x; // The last vertex that was output
    int vertex_y  = y;
    int tmp_x     = x; // The last point that was orthogonal (or 45 degrees) with vertex
    int tmp_y     = y;
