@@ -179,6 +179,9 @@ unsigned int sig_m4;
 unsigned int sig_m5;
 unsigned int sig_m6;
 
+unsigned int sig_iff1;
+unsigned int sig_iff2;
+
 unsigned int sig_ex_af;
 unsigned int sig_ex_bcdehl;
 unsigned int sig_ex_dehl0;
@@ -1981,18 +1984,30 @@ int main(int argc, char *argv[])
 
    int mem_addr = 0;
 
-   memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0x31;
    memory[mem_addr++] = 0x80;
    memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0xed;
+   memory[mem_addr++] = 0x56;
    memory[mem_addr++] = 0x3e;
-   memory[mem_addr++] = 0xcc;
+   memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0xed;
    memory[mem_addr++] = 0x47;
-   memory[mem_addr++] = 0xed;
-   memory[mem_addr++] = 0x5e;
-   memory[mem_addr++] = 0x00;
    memory[mem_addr++] = 0xfb;
+   memory[mem_addr++] = 0xfb;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0x00;
+   memory[mem_addr++] = 0xed;
+   memory[mem_addr++] = 0x57;
+   memory[mem_addr++] = 0x18;
+   memory[mem_addr++] = 0xfe;
+
+
+   memory[0x0038] = 0xfb;
+   memory[0x0039] = 0xc9;
+
+   memory[0x0066] = 0xed;
+   memory[0x0067] = 0x45;
 
 #if 0
 
@@ -3006,6 +3021,9 @@ int main(int argc, char *argv[])
    //sig_ex_dehl1         = FindTransistor(1193, 2981);
    //sig_ex_dehl_combined = FindTransistor(1443, 3001);
 
+   sig_iff1             = FindTransistor(3722,826); // t2712
+   sig_iff2             = FindTransistor(3592,938); // t3187
+
    sig_ex_af            = FindTransistor(2455, 3030);
    sig_ex_bcdehl        = FindTransistor( 661, 3130);
    sig_ex_dehl0         = FindTransistor(1018, 2981);
@@ -3568,7 +3586,7 @@ int main(int argc, char *argv[])
    delete signals_poly;
    delete signals_metal;
 
-   ::exit(1);
+   // ::exit(1);
 
    // ======================================================================
    // ============================= Simulation =============================
@@ -3616,11 +3634,25 @@ int main(int argc, char *argv[])
             }
             else if (pads[j].origsignal == PAD__INT)
             {
+               if (i < DIVISOR * (100 + 200))
+               {
+                  pads[j].SetInputSignal(SIG_VCC);
+               }
+               else
+               {
                   pads[j].SetInputSignal(SIG_GND);
+               }
             }
             else if (pads[j].origsignal == PAD__NMI)
             {
+               if (i < DIVISOR * (100 + 84))
+               {
                   pads[j].SetInputSignal(SIG_VCC);
+               }
+               else
+               {
+                  pads[j].SetInputSignal(SIG_GND);
+               }
             }
             else if (pads[j].origsignal == PAD__BUSRQ)
             {
@@ -3810,9 +3842,9 @@ int main(int argc, char *argv[])
       // Reading output pads
       if (!(i % (DIVISOR * 5)))
 {
-         printf("       : C// // // // AAAA AA                      \n");
-         printf("       : LRH MR RW MI 1111 11AA AAAA AAAA DDDD DDDD\n");
-         printf("       : KSL 1F DR QQ 5432 1098 7654 3210 7654 3210\n");
+         printf("       : C// // // // // AAAA AA                      \n");
+         printf("       : LRH IN MR RW MI 1111 11AA AAAA AAAA DDDD DDDD\n");
+         printf("       : KSL NM 1F DR QQ 5432 1098 7654 3210 7654 3210\n");
       }
 
       if (!(i % (DIVISOR / 5))) // writes out every 100s cycle (for output to be not too verbous)
@@ -3844,6 +3876,14 @@ int main(int argc, char *argv[])
             if (pads[j].origsignal == PAD__HALT)
             {
                pom_halt = (pom2 == '1');
+               printf("%c ", pom2);
+            }
+            if (pads[j].origsignal == PAD__INT)
+            {
+               printf("%c", pom2);
+            }
+            if (pads[j].origsignal == PAD__NMI)
+            {
                printf("%c ", pom2);
             }
             if (pads[j].origsignal == PAD__M1)
@@ -4070,6 +4110,9 @@ int main(int argc, char *argv[])
          printf("%c",         (transistors[sig_ex_dehl0].IsOn()) ? '1' : '0');
          printf("%c",         (transistors[sig_ex_dehl1].IsOn()) ? '1' : '0');
          printf("%c", (transistors[sig_ex_dehl_combined].IsOn()) ? '1' : '0');
+
+         printf(" IFF:%c", (transistors[sig_iff1].IsOn()) ? '1' : '0');
+         printf("%c",      (transistors[sig_iff2].IsOn()) ? '1' : '0');
 
       // printf(" T2:%c", (transistors[sig_trap2].IsOn()) ? 'X' : '.');
       // printf(" U:%c", (transistors[sig_trap2_up].IsOn()) ? 'X' : '.');
