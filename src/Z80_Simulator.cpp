@@ -1235,7 +1235,7 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
    int sig = sigs[start_y * size_x + start_x];
    ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
 
-   printf("tracing signal %d starting at %d, %d\n", sig, start_x, start_y);
+   printf("tracing signal %d on layer %d starting at %d, %d\n", sig, layer, start_x, start_y);
 
    // Trace the boundary using the "square tracing" algorithm
 
@@ -1251,7 +1251,7 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
    int tmp_x     = x; // The last point that was orthogonal (or 45 degrees) with vertex
    int tmp_y     = y;
 
-   bool debug = false; // sig == 21;
+   bool debug = false; // sig == 215 && layer == 1;
 
    // Output the start point, and mark as visited
    ::fprintf(segfile, ",%d,%d", x, size_y - y - 1);
@@ -1353,6 +1353,15 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
       len_in_px++;
 
    } while (len_in_px < 100000 && (x != start_x || y != start_y));
+
+   // flush the last point, if it is different to the starting point
+   if ((tmp_x != start_x || tmp_y != start_y) && (tmp_x != vertex_x || tmp_y != vertex_y)) {
+      if (debug) {
+         printf("outputing vertex %d, %d (final point flush)\n", tmp_x, tmp_y);
+      }
+      ::fprintf(segfile, ",%d,%d", tmp_x, size_y - tmp_y - 1);
+      len_in_vx++;
+   }
 
    printf("len_in_px = %d; len_in_vx = %d\n", len_in_px, len_in_vx);
 
