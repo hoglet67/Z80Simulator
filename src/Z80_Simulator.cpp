@@ -1360,28 +1360,79 @@ vector<Point> walk_boundary(uint16_t *sigs, int start_x, int start_y, int min_x,
 
    } while (len_in_px < 100000 && (x != start_x || y != start_y));
 
+   // Re-push the start point, as it makes the next stages easier
+   boundary.push_back(start);
+
    return boundary;
 }
 
 vector<Point> remove_staircase(vector<Point> boundary, bool debug) {
    vector<Point> result;
    int i = 0;
+
    while (i < boundary.size()) {
       Point a = boundary[i];
       result.push_back(a);
       if (debug) {
          printf("remove_staircase: pushing point %d,%d\n", a.x, a.y);
       }
-      // Measure the length of the stair-cased diagonal starting at this point
+      // Measure the length of the staircased diagonal starting at this point
       int len = 0;
-      for (int j = i + 2; j < boundary.size(); j += 2) {
-         Point b = boundary[j];
-         if (abs(b.x - a.x) == len + 1 && abs(b.y - a.y) == len + 1) {
-            len++;
-         } else {
-            break;
+
+      if (i < boundary.size() - 4) {
+
+         // Point b will be on a diagonal of length 2
+         Point b = boundary[i + 4];
+
+         // Check it's a possible diagonal of length >= 2
+         if (abs(b.x - a.x) == 2 && abs(b.y - a.y) == 2) {
+
+            // Establish the direction and then position of the offset points for an outer edge
+            int dx;
+            int dy;
+            if (b.x > a.x) {
+               if (b.y > a.y) {
+                  // case 1: down/right
+                  dx = 0;
+                  dy = 1;
+               } else {
+                  // case 2: up/right
+                  dx = 1;
+                  dy = 0;
+               }
+            } else {
+               if (b.y > a.y) {
+                  // case 3: down/left
+                  dx = -1;
+                  dy = 0;
+               } else {
+                  // case 4: up/left
+                  dx = 0;
+                  dy = -1;
+               }
+            }
+
+            // Now follow the diagonal
+            Point c = a;
+            for (int j = i + 1; j < boundary.size() - 1; j += 2) {
+               // Check the next point is off the diagonal at the expected offset dx,dy
+               Point d = boundary[j];
+               if (d.x != c.x + dx || d.y != c.y + dy) {
+                  break;
+               }
+               // Check the next point is back on the diaginal
+               Point e = boundary[j + 1];
+               if (abs(e.x - a.x) != len + 1 || abs(e.y - a.y) != len + 1) {
+                  break;
+               }
+               // Keep track of the last point on the diagonal
+               c = e;
+               // And it's length
+               len++;
+            }
          }
       }
+
       // Replace diagonals of length 2 or more
       if (len >= 2) {
          if (debug) {
