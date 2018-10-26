@@ -1238,10 +1238,14 @@ void SetupPad(int x, int y, int signalnum, int padtype)
 #define DIR_L 2
 #define DIR_U 3
 
-vector<Point> walk_boundary(uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y, bool debug) {
+// Trace the boundary using a "square tracing" algoritm
+// - boundary will start and end at the same poing (start_x, start_y)
+// - each point will be adjacent to the previous point (i.e. no diagonals, no duplicates)
+
+vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y, bool debug) {
    int sig = sigs[start_y * size_x + start_x];
 
-   // Trace the boundary using the "square tracing" algorithm
+   // Trace the boundary using a "square tracing" algorithm
 
    // Starting point is the top left corner, so start facing right
    vector<Point> boundary;
@@ -1262,7 +1266,7 @@ vector<Point> walk_boundary(uint16_t *sigs, int start_x, int start_y, int min_x,
    sigs[y * size_x + x] |= 0x8000;
 
    if (debug) {
-      printf("walk_boundary: pushing start point %d,%d\n", start.x, start.y);
+      printf("trace_boundary: pushing start point %d,%d\n", start.x, start.y);
    }
 
    do {
@@ -1311,7 +1315,7 @@ vector<Point> walk_boundary(uint16_t *sigs, int start_x, int start_y, int min_x,
          // Mark as visited
          sigs[y * size_x + x] |= 0x8000;
 
-         // Test if move was diagonal, and if so also visit the corner point
+         // Test if move was diagonal, and if so also visit the appropriate corner point
          if (x != last_x && y != last_y) {
             Point w;
             if (x > last_x) {
@@ -1337,23 +1341,21 @@ vector<Point> walk_boundary(uint16_t *sigs, int start_x, int start_y, int min_x,
             }
             boundary.push_back(w);
             if (debug) {
-               printf("walk_boundary: pushing extra point %d,%d\n", w.x, w.y);
+               printf("trace_boundary: pushing extra point %d,%d\n", w.x, w.y);
             }
-
-
          }
 
+         // Output the point
          Point pt;
          pt.x = x;
          pt.y = y;
          boundary.push_back(pt);
          if (debug) {
-            printf("walk_boundary: pushing point %d,%d\n", pt.x, pt.y);
+            printf("trace_boundary: pushing point %d,%d\n", pt.x, pt.y);
          }
 
          last_x = x;
          last_y = y;
-
       }
 
       len_in_px++;
@@ -1366,28 +1368,33 @@ vector<Point> walk_boundary(uint16_t *sigs, int start_x, int start_y, int min_x,
    return boundary;
 }
 
+// Search for staircases of points, and replace by just the diagonal on the other edge
+
 vector<Point> remove_staircase(vector<Point> boundary, bool debug) {
    vector<Point> result;
-   int i = 0;
 
+   int i = 0;
    while (i < boundary.size()) {
+
+      // Push the current point
       Point a = boundary[i];
       result.push_back(a);
       if (debug) {
          printf("remove_staircase: pushing point %d,%d\n", a.x, a.y);
       }
+
       // Measure the length of the staircased diagonal starting at this point
       int len = 0;
 
       if (i < boundary.size() - 4) {
 
-         // Point b will be on a diagonal of length 2
+         // Point b (4 head) should be on the diagonal
          Point b = boundary[i + 4];
 
-         // Check it's a possible diagonal of length >= 2
+         // Check it's a possible diagonal of length == 2 from point a
          if (abs(b.x - a.x) == 2 && abs(b.y - a.y) == 2) {
 
-            // Establish the direction and then position of the offset points for an outer edge
+            // Establish the direction and the expected position of the offset points for an outer edge
             int dx;
             int dy;
             if (b.x > a.x) {
@@ -1436,7 +1443,7 @@ vector<Point> remove_staircase(vector<Point> boundary, bool debug) {
       // Replace diagonals of length 2 or more
       if (len >= 2) {
          if (debug) {
-            printf("walk_boundary: found starcase of length %d\n", len);
+            printf("remove_staircase: found starcase of length %d\n", len);
          }
          i += len * 2;
       } else {
@@ -1446,6 +1453,8 @@ vector<Point> remove_staircase(vector<Point> boundary, bool debug) {
    }
    return result;
 }
+
+// Search for horizontal or vertical edges, and replace by just the end points
 
 vector<Point> compress_edges(vector<Point> boundary, bool debug) {
    vector<Point> result;
@@ -1475,23 +1484,178 @@ vector<Point> compress_edges(vector<Point> boundary, bool debug) {
    return result;
 }
 
-void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y) {
+// Expand everything by half a pixel, so shapes "touch"
+
+vector<Point> expand_coordinates(vector<Point> boundary) {
+   vector<Point> result;
+   int i = 0;
+
+   // Sanity check boundary starts and ends in the same place
+   if (boundary.front().x != boundary.back().x || boundary.front().y != boundary.back().y) {
+      printf("boundary doesn't start/end on the same point\n");
+      return result;
+   }
+
+   // Sanity check boundary contains at least 5 points
+   if (boundary.size() < 5) {
+      printf("boundary contains only %ld points\n", boundary.size());
+      return result;
+   }
+
+   // Multiple all coordinates by two so we don't have to deal with fractions
+   Point prev = boundary[boundary.size() - 2];
+   prev.x *= 2;
+   prev.y *= 2;
+
+   for (int i = 0; i < boundary.size() - 1; i++) {
+
+      Point curr = boundary[i];
+      curr.x *= 2;
+      curr.y *= 2;
+
+      Point next = boundary[i + 1];
+      next.x *= 2;
+      next.y *= 2;
+
+      // Error if duplicates detected
+      if (curr.x == prev.x && curr.y == prev.y) {
+         printf("Curr/Prev duplicate at %d,%d\n", curr.x, curr.y);
+         for (int j = 0; j < boundary.size(); j++) {
+            printf("%d,%d\n", boundary[j].x, boundary[j].y);
+         }
+         ::exit(1);
+      }
+      if (curr.x == next.x && curr.y == next.y) {
+         printf("Curr/Next duplicate at %d,%d\n", curr.x, curr.y);
+         for (int j = 0; j < boundary.size(); j++) {
+            printf("%d,%d\n", boundary[j].x, boundary[j].y);
+         }
+         ::exit(1);
+      }
+
+      // Expand each shape by half a pixel (== 1 unit at 2x scale)
+      int dx;
+      int dy;
+      if (curr.x == prev.x) {
+         if (curr.y > prev.y) {
+            // case 1: down
+            if (next.x > curr.x) {
+               dx = 1;
+               dy = -1;
+            } else {
+               dx = 1;
+               dy = 1;
+            }
+         } else {
+            // case 2: up
+            if (next.x > curr.x) {
+               dx = -1;
+               dy = -1;
+            } else {
+               dx = -1;
+               dy = 1;
+            }
+         }
+      } else if (curr.y == prev.y) {
+         if (curr.x > prev.x) {
+            // case 3: right
+            if (next.y > curr.y) {
+               dx = 1;
+               dy = -1;
+            } else {
+               dx = -1;
+               dy = -1;
+            }
+         } else {
+            // case 4: left
+            if (next.y > curr.y) {
+               dx = 1;
+               dy = 1;
+            } else {
+               dx = -1;
+               dy = 1;
+            }
+         }
+      } else if (curr.x > prev.x) {
+         if (curr.y > prev.y) {
+            // case 5: down/right
+            dx = 1;
+            dy = -1;
+         } else {
+            // case 6: up/right
+            dx = -1;
+            dy = -1;
+         }
+      } else {
+         if (curr.y > prev.y) {
+            // case 7: down/left
+            dx = 1;
+            dy = 1;
+         } else {
+            // case 8: up/left
+            dx = -1;
+            dy = 1;
+         }
+      }
+
+      // Calculate the position of the new vertex
+      Point pt = curr;
+      pt.x += dx;
+      pt.y += dy;
+
+      // Scale back down to the original size
+      pt.x /= 2;
+      pt.y /= 2;
+
+      // Check everything is still with the bounds of the image
+      if (pt.x < 0) {
+         pt.x = 0;
+      }
+      if (pt.y < 0) {
+         pt.y = 0;
+      }
+      if (pt.x >= size_x) {
+         pt.x = size_x - 1;
+      }
+      if (pt.y >= size_y) {
+         pt.y = size_y - 1;
+      }
+      result.push_back(pt);
+
+      prev = curr;
+   }
+   return result;
+}
+
+
+void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y) {
    int sig = sigs[start_y * size_x + start_x];
-   ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
 
    printf("tracing signal %d on layer %d starting at %d, %d\n", sig, layer, start_x, start_y);
 
    bool debug = false; // sig == 3273 && layer == 1;
 
-   vector<Point> boundary = walk_boundary(sigs, start_x, start_y, min_x, min_y, max_x, max_y, debug);
+   // Trace the boundary using a "square tracing" algoritm
+   // - boundary will start and end at the same poing (start_x, start_y)
+   // - each point will be adjacent to the previous point (i.e. no diagonals, no duplicates)
+   vector<Point> boundary = trace_boundary(sigs, start_x, start_y, min_x, min_y, max_x, max_y, debug);
+
+   // Search for staircases of points, and replace by just the diagonal on the other edge
    boundary = remove_staircase(boundary, debug);
+
+   // Search for horizontal or vertical edges, and replace by just the end points
    boundary = compress_edges(boundary, debug);
 
-   for (int i = 0; i < boundary.size(); i++) {
-      ::fprintf(segfile, ",%d,%d", boundary[i].x, size_y - boundary[i].y - 1);
-   }
+   // Expand everything by half a pixel, so shapes "touch"
+   boundary = expand_coordinates(boundary);
 
-   ::fprintf(segfile, "],\n");
+   if (boundary.size() > 0) {
+      ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
+      for (int i = 0; i < boundary.size(); i++) {
+         ::fprintf(segfile, ",%d,%d", boundary[i].x, size_y - boundary[i].y - 1);
+      }
+      ::fprintf(segfile, "],\n");
+   }
 
    if (debug) {
       ::exit(1);
@@ -1542,7 +1706,7 @@ void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constrai
                      found = false;
                   }
                   if (found) {
-                     trace_boundary(segfile, layer, sigs, x, y, min_x, min_y, max_x, max_y);
+                     trace_segment(segfile, layer, sigs, x, y, min_x, min_y, max_x, max_y);
                   }
                }
                last_sig = sig;
