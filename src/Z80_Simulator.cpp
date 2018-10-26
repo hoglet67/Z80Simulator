@@ -216,6 +216,13 @@ unsigned int sig__instr[8];
 unsigned int sig_dbus[8];
 unsigned int sig_regbit[16];
 
+class Point
+{
+public:
+   int x;
+   int y;
+};
+
 // Connection to transistor remembers index of connected transistor and its terminal
 // proportion is the proportion of that transisor are to the area of all transistors connected
 // to the respective signal - it is here for optimalisation purposes
@@ -1231,81 +1238,32 @@ void SetupPad(int x, int y, int signalnum, int padtype)
 #define DIR_L 2
 #define DIR_U 3
 
-void output_vertex(FILE *segfile, int tmp_x, int tmp_y, int vertex_x, int vertex_y, int len_in_vx, int debug) {
-   // Calculate the difference between tmp and the last vertex
-   int tx = tmp_x - vertex_x;
-   if (tx < 0) {
-      tx = -tx;
-   }
-   int ty = tmp_y - vertex_y;
-   if (ty < 0) {
-      ty = -ty;
-   }
-   // Fix diagonals of length 1 by adding an extra point
-   if (tx == 1 && ty == 1) {
-      int w_x;
-      int w_y;
-      if (tmp_x > vertex_x) {
-         if (tmp_y > vertex_y) {
-            // case 1
-            w_x = vertex_x;
-            w_y = tmp_y;
-         } else {
-            // case 2
-            w_x = tmp_x;
-            w_y = vertex_y;
-         }
-      } else {
-         if (tmp_y > vertex_y) {
-            // case 3
-            w_x = tmp_x;
-            w_y = vertex_y;
-         } else {
-                     // case 4
-            w_x = vertex_x;
-            w_y = tmp_y;
-         }
-      }
-      if (debug) {
-         printf("outputing extra vertex %d, %d\n", w_x, w_y);
-      }
-      // Output extra vertex to form a corner
-      ::fprintf(segfile, ",%d,%d", w_x, size_y - w_y - 1);
-      len_in_vx++;
-   }
-   if (debug) {
-      printf("outputing vertex %d, %d and updating tmp\n", tmp_x, tmp_y);
-   }
-   // Output the last orthogonal point as a vertex
-   ::fprintf(segfile, ",%d,%d", tmp_x, size_y - tmp_y - 1);
-   len_in_vx++;
-}
-
-void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y) {
+vector<Point> walk_boundary(uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y, bool debug) {
    int sig = sigs[start_y * size_x + start_x];
-   ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
-
-   printf("tracing signal %d on layer %d starting at %d, %d\n", sig, layer, start_x, start_y);
 
    // Trace the boundary using the "square tracing" algorithm
 
    // Starting point is the top left corner, so start facing right
+   vector<Point> boundary;
 
    int len_in_px = 0;
-   int len_in_vx = 0;
    int x         = start_x;
    int y         = start_y;
    int dir       = DIR_R;
-   int vertex_x  = x; // The last vertex that was output
-   int vertex_y  = y;
-   int tmp_x     = x; // The last point that was orthogonal (or 45 degrees) with vertex
-   int tmp_y     = y;
+   int last_x    = x; // The last point on the boundary that was visited
+   int last_y    = y;
 
-   bool debug = false; // sig == 215 && layer == 1;
 
    // Output the start point, and mark as visited
-   ::fprintf(segfile, ",%d,%d", x, size_y - y - 1);
+   Point start;
+   start.x = x;
+   start.y = y;
+   boundary.push_back(start);
    sigs[y * size_x + x] |= 0x8000;
+
+   if (debug) {
+      printf("walk_boundary: pushing start point %d,%d\n", start.x, start.y);
+   }
 
    do {
       // Step forwards
@@ -1353,63 +1311,134 @@ void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int s
          // Mark as visited
          sigs[y * size_x + x] |= 0x8000;
 
-         // Calculate the difference between x,y and the last vertex
-         int dx = x - vertex_x;
-         if (dx < 0) {
-            dx = -dx;
-         }
-         int dy = y - vertex_y;
-         if (dy < 0) {
-            dy = -dy;
-         }
-         int dd = dy - dx;
-         if (dd < 0) {
-            dd = -dd;
-         }
-         // Calculate the difference between tmp and the last vertex
-         int tx = tmp_x - vertex_x;
-         if (tx < 0) {
-            tx = -tx;
-         }
-         int ty = tmp_y - vertex_y;
-         if (ty < 0) {
-            ty = -ty;
+         // Test if move was diagonal, and if so also visit the corner point
+         if (x != last_x && y != last_y) {
+            Point w;
+            if (x > last_x) {
+               if (y > last_y) {
+                  // case 1
+                  w.x = last_x;
+                  w.y = y;
+               } else {
+                  // case 2
+                  w.x = x;
+                  w.y = last_y;
+               }
+            } else {
+               if (y > last_y) {
+                  // case 3
+                  w.x = x;
+                  w.y = last_y;
+               } else {
+                  // case 4
+                  w.x = last_x;
+                  w.y = y;
+               }
+            }
+            boundary.push_back(w);
+            if (debug) {
+               printf("walk_boundary: pushing extra point %d,%d\n", w.x, w.y);
+            }
+
+
          }
 
+         Point pt;
+         pt.x = x;
+         pt.y = y;
+         boundary.push_back(pt);
          if (debug) {
-            printf("point %d, %d; dx = %d; dy = %d; dd = %d; ", x, y, dx, dy, dd);
+            printf("walk_boundary: pushing point %d,%d\n", pt.x, pt.y);
          }
 
-         // Based on that difference, choose whether to update tmp or vertex
-         if (dx == 0 || dy == 0 || dd == 0) {
-            tmp_x = x;
-            tmp_y = y;
-            if (debug) {
-               printf("updating tmp\n");
-            }
-         } else if ((dd > 1) || (dd == 1 && ((tx == 0 && ty >= 2) || (ty == 0 && tx >= 2)))) {
-            output_vertex(segfile, tmp_x, tmp_y, vertex_x, vertex_y, len_in_vx, debug);
-            vertex_x = tmp_x;
-            vertex_y = tmp_y;
-            tmp_x = x;
-            tmp_y = y;
-         } else {
-            if (debug) {
-               printf("\n");
-            }
-         }
+         last_x = x;
+         last_y = y;
+
       }
 
       len_in_px++;
 
    } while (len_in_px < 100000 && (x != start_x || y != start_y));
 
-   // flush the last point, if it is different to the starting point
-   if ((tmp_x != start_x || tmp_y != start_y) && (tmp_x != vertex_x || tmp_y != vertex_y)) {
-      output_vertex(segfile, tmp_x, tmp_y, vertex_x, vertex_y, len_in_vx, debug);
-   }
+   return boundary;
+}
 
-   printf("len_in_px = %d; len_in_vx = %d\n", len_in_px, len_in_vx);
+vector<Point> remove_staircase(vector<Point> boundary, bool debug) {
+   vector<Point> result;
+   int i = 0;
+   while (i < boundary.size()) {
+      Point a = boundary[i];
+      result.push_back(a);
+      if (debug) {
+         printf("remove_staircase: pushing point %d,%d\n", a.x, a.y);
+      }
+      // Measure the length of the stair-cased diagonal starting at this point
+      int len = 0;
+      for (int j = i + 2; j < boundary.size(); j += 2) {
+         Point b = boundary[j];
+         if (abs(b.x - a.x) == len + 1 && abs(b.y - a.y) == len + 1) {
+            len++;
+         } else {
+            break;
+         }
+      }
+      // Replace diagonals of length 2 or more
+      if (len >= 2) {
+         if (debug) {
+            printf("walk_boundary: found starcase of length %d\n", len);
+         }
+         i += len * 2;
+      } else {
+         i++;
+      }
+
+   }
+   return result;
+}
+
+vector<Point> compress_edges(vector<Point> boundary, bool debug) {
+   vector<Point> result;
+   int i = 0;
+   while (i < boundary.size()) {
+      Point a = boundary[i];
+      if (debug) {
+         printf("compress_edges: pushing point %d,%d\n", a.x, a.y);
+      }
+      result.push_back(a);
+      // Find the last point that has the same x or y as a
+      int len = 0;
+      int j = i + 1;
+      while (j < boundary.size() && (boundary[j].x == a.x || boundary[j].y == a.y)) {
+         j++;
+         len++;
+      }
+      if (len > 1) {
+         if (debug) {
+            printf("compress_edges: found line of length %d\n", len);
+         }
+         i += len;
+      } else {
+         i++;
+      }
+   }
+   return result;
+}
+
+void trace_boundary(FILE *segfile, int layer, uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y) {
+   int sig = sigs[start_y * size_x + start_x];
+   ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
+
+   printf("tracing signal %d on layer %d starting at %d, %d\n", sig, layer, start_x, start_y);
+
+   bool debug = false; // sig == 3273 && layer == 1;
+
+   vector<Point> boundary = walk_boundary(sigs, start_x, start_y, min_x, min_y, max_x, max_y, debug);
+   boundary = remove_staircase(boundary, debug);
+   boundary = compress_edges(boundary, debug);
+
+   for (int i = 0; i < boundary.size(); i++) {
+      ::fprintf(segfile, ",%d,%d", boundary[i].x, size_y - boundary[i].y - 1);
+   }
 
    ::fprintf(segfile, "],\n");
 
