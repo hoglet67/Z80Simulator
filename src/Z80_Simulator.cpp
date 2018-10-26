@@ -1368,7 +1368,7 @@ vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x
    return boundary;
 }
 
-// Search for staircases of points, and replace by just the diagonal on the other edge
+// Search for staircases of points, and replace by just the diagonal on the outer edge
 
 vector<Point> remove_staircase(vector<Point> boundary, bool debug) {
    vector<Point> result;
@@ -1600,8 +1600,8 @@ vector<Point> expand_coordinates(vector<Point> boundary) {
 
       // Calculate the position of the new vertex
       Point pt = curr;
-      pt.x += dx;
-      pt.y += dy;
+      pt.x += dx + 1;
+      pt.y += dy + 1;
 
       // Scale back down to the original size
       pt.x /= 2;
@@ -1636,7 +1636,7 @@ void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int st
    bool debug = false; // sig == 3273 && layer == 1;
 
    // Trace the boundary using a "square tracing" algoritm
-   // - boundary will start and end at the same poing (start_x, start_y)
+   // - boundary will start and end at the same point (start_x, start_y)
    // - each point will be adjacent to the previous point (i.e. no diagonals, no duplicates)
    vector<Point> boundary = trace_boundary(sigs, start_x, start_y, min_x, min_y, max_x, max_y, debug);
 
