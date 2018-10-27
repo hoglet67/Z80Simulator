@@ -1360,7 +1360,11 @@ vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x
 
       len_in_px++;
 
-   } while (len_in_px < 100000 && (x != start_x || y != start_y));
+   } while (len_in_px < 1000000 && (x != start_x || y != start_y));
+
+   if (len_in_px >= 1000000) {
+      printf("Boundary tracking exceeded limit of 1000000 points!");
+   }
 
    // Re-push the start point, as it makes the next stages easier
    boundary.push_back(start);
@@ -1686,22 +1690,32 @@ void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constrai
    // Segment the image into two halves, which is good enough to break up any very
    // large shapes that contain holes. This is a bit of a cludge, but simple boundary
    // detection algorithms don't handle holes.
-   int block_size_x = 2350;
-   int block_size_y = 5000;
+   int block_size_x_list[] = {size_x, 0, 0, 0, 0, 0};
+   int block_size_y_list[] = {size_y, 0, 0, 0, 0, 0};
    if (layer == 0) {
-      // For the metal layer, break up a bit more, as there are smaller loops
-      block_size_y = 1250;
+      if (constraint == CONSTRAINT_GND) {
+         block_size_x_list[0] = 1200;
+         block_size_x_list[1] = size_x - 1200;
+      }
+   } else {
+      // Make a small cut in the poly/diffusion ring
+      for (int y = size_y - 100; y < size_y; y++) {
+         sigs[y * size_x + size_x / 2] = 0;
+      }
    }
-   for (int min_y = 0; min_y < size_y; min_y += block_size_y) {
-      int max_y = min_y + block_size_y;
+   int *block_size_y = block_size_y_list;
+   for (int min_y = 0; min_y < size_y; min_y += *block_size_y++) {
+      int max_y = min_y + *block_size_y;
       if (max_y > size_y) {
          max_y = size_y;
       }
-      for (int min_x = 0; min_x < size_x; min_x += block_size_x) {
-         int max_x = min_x + block_size_x;
+      int *block_size_x = block_size_x_list;
+      for (int min_x = 0; min_x < size_x; min_x += *block_size_x++) {
+         int max_x = min_x + *block_size_x;
          if (max_x > size_x) {
             max_x = size_x;
          }
+         printf("layer = %d, constraint = %d, %d,%d %d,%d\n", layer, constraint, min_x, min_y, max_x, max_y);
          for (int y = min_y; y < max_y; y++) {
             int last_sig = 0;
             for (int x = min_x; x < max_x; x++) {
@@ -1726,6 +1740,12 @@ void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constrai
                      found = false;
                   }
                   if (found) {
+                     if (layer == 0 && constraint == CONSTRAINT_GND) {
+                        printf("Started tracing GND at %d,%d\n", x, y);
+                     }
+                     if (layer == 0 && constraint == CONSTRAINT_VCC) {
+                        printf("Started tracing VCC at %d,%d\n", x, y);
+                     }
                      trace_segment(segfile, layer, sigs, x, y, min_x, min_y, max_x, max_y);
                   }
                }
@@ -1745,7 +1765,9 @@ void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constrai
 void write_segdefs_file(string filename) {
    FILE* segfile = ::fopen(filename.c_str(), "wb");
    ::fputs("var segdefs = [\n", segfile);
-   write_layer_segments(segfile, 0, signals_metal, CONSTRAINT_NONE);
+   write_layer_segments(segfile, 0, signals_metal, CONSTRAINT_SWITCHED);
+   write_layer_segments(segfile, 0, signals_metal, CONSTRAINT_GND);
+   write_layer_segments(segfile, 0, signals_metal, CONSTRAINT_VCC);
    write_layer_segments(segfile, 1, signals_diff,  CONSTRAINT_SWITCHED);
    write_layer_segments(segfile, 3, signals_diff,  CONSTRAINT_GND);
    write_layer_segments(segfile, 4, signals_diff,  CONSTRAINT_VCC);
