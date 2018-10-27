@@ -1579,22 +1579,42 @@ vector<Point> expand_coordinates(vector<Point> boundary) {
       } else if (curr.x > prev.x) {
          if (curr.y > prev.y) {
             // case 5: down/right
-            dx = 1;
-            dy = -1;
+            if (next.x < curr.x) {
+               dx = 3;
+               dy = 1;
+            } else {
+               dx = 1;
+               dy = -1;
+            }
          } else {
             // case 6: up/right
-            dx = -1;
-            dy = -1;
+            if (next.y > curr.y) {
+               dx = 1;
+               dy = -3;
+            } else {
+               dx = -1;
+               dy = -1;
+            }
          }
       } else {
          if (curr.y > prev.y) {
             // case 7: down/left
-            dx = 1;
-            dy = 1;
+            if (next.y < curr.y) {
+               dx = -1;
+               dy = 3;
+            } else {
+               dx = 1;
+               dy = 1;
+            }
          } else {
             // case 8: up/left
-            dx = -1;
-            dy = 1;
+            if (next.x > curr.x) {
+               dx = -3;
+               dy = -1;
+            } else {
+               dx = -1;
+               dy = 1;
+            }
          }
       }
 
