@@ -1480,10 +1480,8 @@ vector< vector<Point> > search_for_holes(uint16_t *sigs, vector<Point> boundary,
                x--;
                s = sigs[y * size_x + x];
                if (s == 0 && last_s == sig) {
-
-                  printf("hole in signal %d at %d, %d\n", sig, x - 1, y);
-
-                  vector<Point> inner = trace_boundary(sigs, x - 1, y, 0, 0, size_x, size_y, DIR_U, FLAG_INNER, debug);
+                  printf("hole in signal %d at %d, %d\n", sig, x + 1, y);
+                  vector<Point> inner = trace_boundary(sigs, x + 1, y, 0, 0, size_x, size_y, DIR_U, FLAG_INNER, debug);
                   holes.push_back(inner);
                }
                last_s = s;
@@ -1726,7 +1724,7 @@ void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int st
          vector<Point> hole = holes[j];
          hole = remove_staircase(hole, debug);
          hole = compress_edges(hole, debug);
-         //hole = expand_coordinates(hole);
+         hole = expand_coordinates(hole);
          if (hole.size() > 0) {
             if (!closedBoundary) {
                // If there are holes, we need to "close" the outer boundary by re-emitting the start point
@@ -1736,7 +1734,7 @@ void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int st
             for (int k = 0; k < hole.size(); k++) {
                ::fprintf(segfile, ",%d,%d", hole[k].x, size_y - hole[k].y - 1);
             }
-            //::fprintf(segfile, ",%d,%d", hole[0].x, size_y - hole[0].y - 1);
+            ::fprintf(segfile, ",%d,%d", hole[0].x, size_y - hole[0].y - 1);
          } else {
             printf("Warning: Inner boundary has zero points\n");
          }
