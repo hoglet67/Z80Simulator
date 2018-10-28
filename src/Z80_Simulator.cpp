@@ -1757,6 +1757,7 @@ void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constrai
    // detection algorithms don't handle holes.
    int block_size_x_list[] = {size_x, 0, 0, 0, 0, 0};
    int block_size_y_list[] = {size_y, 0, 0, 0, 0, 0};
+#if 0
    if (layer == 0) {
       if (constraint == CONSTRAINT_GND) {
          block_size_x_list[0] = 1200;
@@ -1767,6 +1768,13 @@ void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constrai
       for (int y = size_y - 100; y < size_y; y++) {
          sigs[y * size_x + size_x / 2] = 0;
       }
+   }
+#endif
+   // Make a small cut in the poly/diffusion/metal ring
+   // This avoids having to solve the problem of nested holes!
+   int cut_start = layer == 0 ? 4550 : 4650;
+   for (int x = cut_start; x < size_x; x++) {
+      sigs[2500 * size_x + x] = 0;
    }
    int *block_size_y = block_size_y_list;
    for (int min_y = 0; min_y < size_y; min_y += *block_size_y++) {
