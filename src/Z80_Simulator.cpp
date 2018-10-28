@@ -1462,7 +1462,7 @@ vector<Point> remove_staircase(vector<Point> boundary, bool debug) {
    return result;
 }
 
-vector< vector<Point> > search_for_holes(uint16_t *sigs, vector<Point> boundary, bool debug) {
+vector< vector<Point> > search_for_holes(int layer, uint16_t *sigs, vector<Point> boundary, bool debug) {
    vector< vector<Point> > holes;
    for (int i = 1; i < boundary.size(); i++) {
       if (boundary[i].x == boundary[i - 1].x && boundary[i].y > boundary[i - 1].y) {
@@ -1480,7 +1480,7 @@ vector< vector<Point> > search_for_holes(uint16_t *sigs, vector<Point> boundary,
                x--;
                s = sigs[y * size_x + x];
                if (s == 0 && last_s == sig) {
-                  printf("hole in signal %d at %d, %d\n", sig, x + 1, y);
+                  printf("hole in signal %d on layer %d at %d, %d\n", sig, layer, x + 1, y);
                   vector<Point> inner = trace_boundary(sigs, x + 1, y, 0, 0, size_x, size_y, DIR_U, FLAG_INNER, debug);
                   holes.push_back(inner);
                }
@@ -1700,7 +1700,7 @@ void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int st
    vector<Point> boundary = trace_boundary(sigs, start_x, start_y, min_x, min_y, max_x, max_y, DIR_R, FLAG_OUTER, debug);
 
    // Look for any holes
-   vector< vector<Point> > holes = search_for_holes(sigs, boundary, debug);
+   vector< vector<Point> > holes = search_for_holes(layer, sigs, boundary, debug);
    if (holes.size() > 0) {
       printf("%ld holes\n", holes.size());
    }
