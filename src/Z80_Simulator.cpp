@@ -1238,11 +1238,15 @@ void SetupPad(int x, int y, int signalnum, int padtype)
 #define DIR_L 2
 #define DIR_U 3
 
+#define FLAG_OUTER 0x8000
+#define FLAG_INNER 0x4000
+#define FLAG_ANY   0xC000
+
 // Trace the boundary using a "square tracing" algoritm
 // - boundary will start and end at the same poing (start_x, start_y)
 // - each point will be adjacent to the previous point (i.e. no diagonals, no duplicates)
 
-vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y, bool debug) {
+vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y, int initial_dir, int flag, bool debug) {
    int sig = sigs[start_y * size_x + start_x];
 
    // Trace the boundary using a "square tracing" algorithm
@@ -1253,7 +1257,7 @@ vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x
    int len_in_px = 0;
    int x         = start_x;
    int y         = start_y;
-   int dir       = DIR_R;
+   int dir       = initial_dir;
    int last_x    = x; // The last point on the boundary that was visited
    int last_y    = y;
 
@@ -1263,7 +1267,7 @@ vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x
    start.x = x;
    start.y = y;
    boundary.push_back(start);
-   sigs[y * size_x + x] |= 0x8000;
+   sigs[y * size_x + x] |= flag;
 
    if (debug) {
       printf("trace_boundary: pushing start point %d,%d\n", start.x, start.y);
@@ -1310,10 +1314,10 @@ vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x
       }
 
       // Ensure we process each boundary point just once
-      if (point && point < 0x8000) {
+      if (point && !(point & flag)) {
 
          // Mark as visited
-         sigs[y * size_x + x] |= 0x8000;
+         sigs[y * size_x + x] |= flag;
 
          // Test if move was diagonal, and if so also visit the appropriate corner point
          if (x != last_x && y != last_y) {
@@ -1457,6 +1461,39 @@ vector<Point> remove_staircase(vector<Point> boundary, bool debug) {
    }
    return result;
 }
+
+vector< vector<Point> > search_for_holes(uint16_t *sigs, vector<Point> boundary, bool debug) {
+   vector< vector<Point> > holes;
+   for (int i = 1; i < boundary.size(); i++) {
+      if (boundary[i].x == boundary[i - 1].x && boundary[i].y > boundary[i - 1].y) {
+         // Heading down
+         int x   = boundary[i].x;
+         int y   = boundary[i].y;
+         int sig = sigs[y * size_x + x] & ~FLAG_ANY;
+         // Avoid going wrong if the shape tapers to a single pixel
+         int sig2 = sigs[y * size_x + x - 1] & ~FLAG_ANY;
+         if (sig2 == sig) {
+            // Scan left until the opposite boundary is hit
+            int last_s = sig;
+            int s;
+            do {
+               x--;
+               s = sigs[y * size_x + x];
+               if (s == 0 && last_s == sig) {
+
+                  printf("hole in signal %d at %d, %d\n", sig, x - 1, y);
+
+                  vector<Point> inner = trace_boundary(sigs, x - 1, y, 0, 0, size_x, size_y, DIR_U, FLAG_INNER, debug);
+                  holes.push_back(inner);
+               }
+               last_s = s;
+            } while (x >= 0 && s != (sig | FLAG_OUTER));
+         }
+      }
+   }
+   return holes;
+}
+
 
 // Search for horizontal or vertical edges, and replace by just the end points
 
@@ -1662,7 +1699,13 @@ void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int st
    // Trace the boundary using a "square tracing" algoritm
    // - boundary will start and end at the same point (start_x, start_y)
    // - each point will be adjacent to the previous point (i.e. no diagonals, no duplicates)
-   vector<Point> boundary = trace_boundary(sigs, start_x, start_y, min_x, min_y, max_x, max_y, debug);
+   vector<Point> boundary = trace_boundary(sigs, start_x, start_y, min_x, min_y, max_x, max_y, DIR_R, FLAG_OUTER, debug);
+
+   // Look for any holes
+   vector< vector<Point> > holes = search_for_holes(sigs, boundary, debug);
+   if (holes.size() > 0) {
+      printf("%ld holes\n", holes.size());
+   }
 
    // Search for staircases of points, and replace by just the diagonal on the other edge
    boundary = remove_staircase(boundary, debug);
@@ -1678,7 +1721,29 @@ void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int st
       for (int i = 0; i < boundary.size(); i++) {
          ::fprintf(segfile, ",%d,%d", boundary[i].x, size_y - boundary[i].y - 1);
       }
+      bool closedBoundary = false;
+      for (int j = 0; j < holes.size(); j++) {
+         vector<Point> hole = holes[j];
+         hole = remove_staircase(hole, debug);
+         hole = compress_edges(hole, debug);
+         //hole = expand_coordinates(hole);
+         if (hole.size() > 0) {
+            if (!closedBoundary) {
+               // If there are holes, we need to "close" the outer boundary by re-emitting the start point
+               ::fprintf(segfile, ",%d,%d", boundary[0].x, size_y - boundary[0].y - 1);
+               closedBoundary = true;
+            }
+            for (int k = 0; k < hole.size(); k++) {
+               ::fprintf(segfile, ",%d,%d", hole[k].x, size_y - hole[k].y - 1);
+            }
+            //::fprintf(segfile, ",%d,%d", hole[0].x, size_y - hole[0].y - 1);
+         } else {
+            printf("Warning: Inner boundary has zero points\n");
+         }
+      }
       ::fprintf(segfile, "],\n");
+   } else {
+      printf("Warning: Outer boundary has zero points\n");
    }
 
    if (debug) {
@@ -1721,7 +1786,7 @@ void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constrai
             for (int x = min_x; x < max_x; x++) {
                int sig = sigs[y * size_x + x];
                // Identify the top left corner of an object
-               if (last_sig == 0 && sig > 0 && sig < 0x8000) {
+               if (!last_sig && sig && !(sig & FLAG_ANY)) {
                   bool found;
                   switch (constraint) {
                   case CONSTRAINT_NONE:
@@ -1756,7 +1821,7 @@ void write_layer_segments(FILE *segfile, int layer, uint16_t *sigs, int constrai
    }
    uint16_t *sp = sigs;
    for (int i = 0; i < size_x * size_y; i++) {
-      *sp &= 0x7FFF;
+      *sp &= ~FLAG_ANY;
       sp++;
    }
 }
