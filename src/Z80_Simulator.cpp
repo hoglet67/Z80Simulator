@@ -1348,6 +1348,7 @@ vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x
                }
             }
             boundary.push_back(w);
+            len_in_px++;
             if (debug) {
                printf("trace_boundary: pushing extra point %d,%d\n", w.x, w.y);
             }
@@ -1358,6 +1359,7 @@ vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x
          pt.x = x;
          pt.y = y;
          boundary.push_back(pt);
+         len_in_px++;
          if (debug) {
             printf("trace_boundary: pushing point %d,%d\n", pt.x, pt.y);
          }
@@ -1365,8 +1367,6 @@ vector<Point> trace_boundary(uint16_t *sigs, int start_x, int start_y, int min_x
          last_x = x;
          last_y = y;
       }
-
-      len_in_px++;
 
    } while (len_in_px < 1000000 && (x != start_x || y != start_y));
 
@@ -1621,6 +1621,8 @@ vector<Point> expand_coordinates(int layer, int signal, vector<Point> boundary) 
       switch(dir_in) {
       case DIR_R:
          switch (dir_out) {
+         case DIR_R:
+            dx =  0; dy = -1; break; // redundant point
          case DIR_D:
             dx =  1; dy = -1; break;
          case DIR_U:
@@ -1639,6 +1641,8 @@ vector<Point> expand_coordinates(int layer, int signal, vector<Point> boundary) 
          switch (dir_out) {
          case DIR_R:
             dx =  1; dy = -1; break;
+         case DIR_D:
+            dx =  1; dy =  0; break; // redundant point
          case DIR_L:
             dx =  1; dy =  1; break;
          case DIR_DR:
@@ -1655,6 +1659,8 @@ vector<Point> expand_coordinates(int layer, int signal, vector<Point> boundary) 
          switch (dir_out) {
          case DIR_D:
             dx =  1; dy =  1; break;
+         case DIR_L:
+            dx =  0; dy =  1; break; // redundant point
          case DIR_U:
             dx = -1; dy =  1; break;
          case DIR_DR:
@@ -1673,6 +1679,8 @@ vector<Point> expand_coordinates(int layer, int signal, vector<Point> boundary) 
             dx = -1; dy = -1; break;
          case DIR_L:
             dx = -1; dy =  1; break;
+         case DIR_U:
+            dx = -1; dy =  0; break; // redundant point
          case DIR_DR:
             dx = -1; dy = -2; break;
          case DIR_DL:
@@ -1693,6 +1701,8 @@ vector<Point> expand_coordinates(int layer, int signal, vector<Point> boundary) 
             dx =  2; dy =  1; break;
          case DIR_U:
             dx = -1; dy = -2; break;
+         case DIR_DR:
+            dx =  1; dy =  0; break; // redundant point
          case DIR_DL:
             dx =  1; dy =  0; break;
          case DIR_UR:
@@ -1711,6 +1721,8 @@ vector<Point> expand_coordinates(int layer, int signal, vector<Point> boundary) 
             dx = -1; dy =  2; break;
          case DIR_DR:
             dx = -1; dy =  0; break;
+         case DIR_DL:
+            dx =  0; dy =  1; break; // redundant point
          case DIR_UL:
             dx =  0; dy =  1; break;
          }
@@ -1727,6 +1739,8 @@ vector<Point> expand_coordinates(int layer, int signal, vector<Point> boundary) 
             dx = -1; dy =  0; break;
          case DIR_DR:
             dx =  0; dy = -1; break;
+         case DIR_UR:
+            dx =  0; dy = -1; break; // redundant point
          case DIR_UL:
             dx =  1; dy =  0; break;
          }
@@ -1745,14 +1759,20 @@ vector<Point> expand_coordinates(int layer, int signal, vector<Point> boundary) 
             dx =  0; dy = -1; break;
          case DIR_UR:
             dx = -1; dy =  0; break;
+         case DIR_UL:
+            dx = -1; dy =  0; break; // redundant point
          }
          break;
+      }
+
+      if (dir_in == dir_out) {
+         printf("Redundant direction change index %d  (%d to %d) on layer %d signal %d at %d, %d\n", i, dir_in, dir_out, layer, signal, curr.x / 2, curr.y / 2);
       }
 
       if (dx == 999 || dy == 999) {
          dx = 0;
          dy = 0;
-         printf("Illegal direction change (%d to %d) on layer %d signal %d at %d, %d\n", dir_in, dir_out, layer, signal, curr.x / 2, curr.y / 2);
+         printf("Illegal 180 degree direction change index %d (%d to %d) on layer %d signal %d at %d, %d\n", i, dir_in, dir_out, layer, signal, curr.x / 2, curr.y / 2);
       }
 
       // Calculate the position of the new vertex
