@@ -1455,13 +1455,94 @@ vector<Point> remove_staircase(vector<Point> boundary, bool debug) {
       // Replace diagonals of length 2 or more
       if (len >= 2) {
          if (debug) {
-            printf("remove_staircase: found starcase of length %d\n", len);
+            printf("remove_staircase: found staircase of length %d\n", len);
          }
          i += len * 2;
       } else {
          i++;
       }
 
+   }
+   return result;
+}
+
+vector<Point> remove_short_staircase(vector<Point> boundary, bool debug) {
+   vector<Point> result;
+
+   int i = 0;
+   while (i < boundary.size()) {
+
+      // Push the current point
+      Point a = boundary[i];
+      result.push_back(a);
+      if (debug) {
+         printf("remove_short_staircase: pushing point %d,%d\n", a.x, a.y);
+      }
+
+      // Move past a, as it's already been processed
+      i++;
+
+      // We need to look ahead at the next four points
+      if (i < boundary.size() - 3) {
+
+         Point b = boundary[i];
+         Point c = boundary[i + 1];
+         Point d = boundary[i + 2];
+         Point e = boundary[i + 3];
+
+         // Check it's a diagonal of length == 1 from point a - c
+         if (abs(c.x - a.x) != 1 || abs(c.y - a.y) != 1) {
+            continue;
+         }
+
+         // Check it's a diagonal of length == 2 from point a - e
+         if (abs(e.x - a.x) != 2 || abs(e.y - a.y) != 2) {
+            continue;
+         }
+
+         // Establish the direction and the expected position of the offset points for an outer edge
+         int dx;
+         int dy;
+         if (c.x > a.x) {
+            if (c.y > a.y) {
+               // case 1: down/right
+               dx =  1;
+               dy =  0;
+            } else {
+               // case 2: up/right
+               dx =  0;
+               dy = -1;
+            }
+         } else {
+            if (c.y > a.y) {
+               // case 3: down/left
+               dx =  0;
+               dy =  1;
+            } else {
+               // case 4: up/left
+               dx = -1;
+               dy =  0;
+            }
+         }
+
+         // Check the intermediate points b, d
+         if (b.x != a.x + dx || b.y != a.y + dy) {
+            continue;
+         }
+         if (d.x != c.x + dx || d.y != c.y + dy) {
+            continue;
+         }
+
+         // Length 1 diagonal found, so push (b)
+         result.push_back(b);
+         if (debug) {
+            printf("remove_short_staircase: pushing point %d,%d\n", b.x, b.y);
+            printf("remove_short_staircase: deleting point %d,%d\n", c.x, c.y);
+         }
+
+         // Move past b, and skip c to make the diagonal
+         i += 2;
+      }
    }
    return result;
 }
@@ -1824,8 +1905,11 @@ void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int st
       printf("%ld holes\n", holes.size());
    }
 
-   // Search for staircases of points, and replace by just the diagonal on the other edge
+   // Search for staircases of points (length > 1), and replace by just the diagonal on the outer edge
    boundary = remove_staircase(boundary, debug);
+
+   // Search for staircases of points (length = 1) with additional constraints to avoid diagonalizing step-outs
+   boundary = remove_short_staircase(boundary, debug);
 
    // Search for horizontal or vertical edges, and replace by just the end points
    boundary = compress_edges(boundary, debug);
@@ -1844,6 +1928,7 @@ void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int st
       for (int j = 0; j < holes.size(); j++) {
          vector<Point> hole = holes[j];
          hole = remove_staircase(hole, debug);
+         hole = remove_short_staircase(hole, debug);
          hole = compress_edges(hole, debug);
          hole = expand_coordinates(layer, sig, hole);
          if (hole.size() > 0) {
