@@ -1233,10 +1233,14 @@ void SetupPad(int x, int y, int signalnum, int padtype)
 // +1 to turn right
 // -1 to turn left
 
-#define DIR_R 0
-#define DIR_D 1
-#define DIR_L 2
-#define DIR_U 3
+#define DIR_R  0
+#define DIR_D  1
+#define DIR_L  2
+#define DIR_U  3
+#define DIR_DR 4
+#define DIR_DL 5
+#define DIR_UR 6
+#define DIR_UL 7
 
 #define FLAG_OUTER 0x8000
 #define FLAG_INNER 0x4000
@@ -1525,7 +1529,43 @@ vector<Point> compress_edges(vector<Point> boundary, bool debug) {
 
 // Expand everything by half a pixel, so shapes "touch"
 
-vector<Point> expand_coordinates(vector<Point> boundary) {
+int get_direction(Point a, Point b) {
+   if (b.x == a.x) {
+      if (b.y > a.y) {
+         // case 1: down
+         return DIR_D;
+      } else {
+         // case 2: up
+         return DIR_U;
+      }
+   } else if (b.y == a.y) {
+      if (b.x > a.x) {
+         // case 3: right
+         return DIR_R;
+      } else {
+         // case 4: left
+         return DIR_L;
+      }
+   } else if (b.x > a.x) {
+      if (b.y > a.y) {
+         // case 5: down/right
+         return DIR_DR;
+      } else {
+         // case 6: up/right
+         return DIR_UR;
+      }
+   } else {
+      if (b.y > a.y) {
+         // case 7: down/left
+         return DIR_DL;
+      } else {
+         // case 8: up/left
+         return DIR_UL;
+      }
+   }
+}
+
+vector<Point> expand_coordinates(int layer, int signal, vector<Point> boundary) {
    vector<Point> result;
    int i = 0;
 
@@ -1573,88 +1613,146 @@ vector<Point> expand_coordinates(vector<Point> boundary) {
       }
 
       // Expand each shape by half a pixel (== 1 unit at 2x scale)
-      int dx;
-      int dy;
-      if (curr.x == prev.x) {
-         if (curr.y > prev.y) {
-            // case 1: down
-            if (next.x > curr.x) {
-               dx = 1;
-               dy = -1;
-            } else {
-               dx = 1;
-               dy = 1;
-            }
-         } else {
-            // case 2: up
-            if (next.x > curr.x) {
-               dx = -1;
-               dy = -1;
-            } else {
-               dx = -1;
-               dy = 1;
-            }
+      int dx = 999;
+      int dy = 999;
+      int dir_in = get_direction(prev, curr);
+      int dir_out = get_direction(curr, next);
+
+      switch(dir_in) {
+      case DIR_R:
+         switch (dir_out) {
+         case DIR_D:
+            dx =  1; dy = -1; break;
+         case DIR_U:
+            dx = -1; dy = -1; break;
+         case DIR_DR:
+            dx =  0; dy = -1; break;
+         case DIR_DL:
+            dx =  2; dy = -1; break;
+         case DIR_UR:
+            dx =  0; dy = -1; break;
+         case DIR_UL:
+            dx = -2; dy = -1; break;
          }
-      } else if (curr.y == prev.y) {
-         if (curr.x > prev.x) {
-            // case 3: right
-            if (next.y > curr.y) {
-               dx = 1;
-               dy = -1;
-            } else {
-               dx = -1;
-               dy = -1;
-            }
-         } else {
-            // case 4: left
-            if (next.y > curr.y) {
-               dx = 1;
-               dy = 1;
-            } else {
-               dx = -1;
-               dy = 1;
-            }
+         break;
+      case DIR_D:
+         switch (dir_out) {
+         case DIR_R:
+            dx =  1; dy = -1; break;
+         case DIR_L:
+            dx =  1; dy =  1; break;
+         case DIR_DR:
+            dx =  1; dy =  0; break;
+         case DIR_DL:
+            dx =  1; dy =  0; break;
+         case DIR_UR:
+            dx =  1; dy = -2; break;
+         case DIR_UL:
+            dx =  1; dy =  2; break;
          }
-      } else if (curr.x > prev.x) {
-         if (curr.y > prev.y) {
-            // case 5: down/right
-            if (next.x < curr.x) {
-               dx = 3;
-               dy = 1;
-            } else {
-               dx = 1;
-               dy = -1;
-            }
-         } else {
-            // case 6: up/right
-            if (next.y > curr.y) {
-               dx = 1;
-               dy = -3;
-            } else {
-               dx = -1;
-               dy = -1;
-            }
+         break;
+      case DIR_L:
+         switch (dir_out) {
+         case DIR_D:
+            dx =  1; dy =  1; break;
+         case DIR_U:
+            dx = -1; dy =  1; break;
+         case DIR_DR:
+            dx =  2; dy =  1; break;
+         case DIR_DL:
+            dx =  0; dy =  1; break;
+         case DIR_UR:
+            dx = -2; dy =  1; break;
+         case DIR_UL:
+            dx =  0; dy =  1; break;
          }
-      } else {
-         if (curr.y > prev.y) {
-            // case 7: down/left
-            if (next.y < curr.y) {
-               dx = -1;
-               dy = 3;
-            } else {
-               dx = 1;
-               dy = 1;
-            }
-         } else {
-            // case 8: up/left
-            if (next.x > curr.x) {
-               dx = -3;
-               dy = -1;
-            } else {
-               dx = -1;
-               dy = 1;
-            }
+         break;
+      case DIR_U:
+         switch (dir_out) {
+         case DIR_R:
+            dx = -1; dy = -1; break;
+         case DIR_L:
+            dx = -1; dy =  1; break;
+         case DIR_DR:
+            dx = -1; dy = -2; break;
+         case DIR_DL:
+            dx = -1; dy =  2; break;
+         case DIR_UR:
+            dx = -1; dy =  0; break;
+         case DIR_UL:
+            dx = -1; dy =  0; break;
          }
+         break;
+      case DIR_DR:
+         switch (dir_out) {
+         case DIR_R:
+            dx =  0; dy = -1; break;
+         case DIR_D:
+            dx =  1; dy =  0; break;
+         case DIR_L:
+            dx =  2; dy =  1; break;
+         case DIR_U:
+            dx = -1; dy = -2; break;
+         case DIR_DL:
+            dx =  1; dy =  0; break;
+         case DIR_UR:
+            dx =  0; dy =  1; break;
+         }
+         break;
+      case DIR_DL:
+         switch (dir_out) {
+         case DIR_R:
+            dx =  2; dy = -1; break;
+         case DIR_D:
+            dx =  1; dy =  0; break;
+         case DIR_L:
+            dx =  0; dy =  1; break;
+         case DIR_U:
+            dx = -1; dy =  2; break;
+         case DIR_DR:
+            dx = -1; dy =  0; break;
+         case DIR_UL:
+            dx =  0; dy =  1; break;
+         }
+         break;
+      case DIR_UR:
+         switch (dir_out) {
+         case DIR_R:
+            dx =  0; dy = -1; break;
+         case DIR_D:
+            dx =  1; dy = -2; break;
+         case DIR_L:
+            dx = -2; dy =  1; break;
+         case DIR_U:
+            dx = -1; dy =  0; break;
+         case DIR_DR:
+            dx =  0; dy = -1; break;
+         case DIR_UL:
+            dx =  1; dy =  0; break;
+         }
+         break;
+      case DIR_UL:
+         switch (dir_out) {
+         case DIR_R:
+            dx = -2; dy = -1; break;
+         case DIR_D:
+            dx =  1; dy =  2; break;
+         case DIR_L:
+            dx =  0; dy =  1; break;
+         case DIR_U:
+            dx = -1; dy =  0; break;
+         case DIR_DL:
+            dx =  0; dy = -1; break;
+         case DIR_UR:
+            dx = -1; dy =  0; break;
+         }
+         break;
+      }
+
+      if (dx == 999 || dy == 999) {
+         dx = 0;
+         dy = 0;
+         printf("Illegal direction change (%d to %d) on layer %d signal %d at %d, %d\n", dir_in, dir_out, layer, signal, curr.x / 2, curr.y / 2);
       }
 
       // Calculate the position of the new vertex
@@ -1663,8 +1761,8 @@ vector<Point> expand_coordinates(vector<Point> boundary) {
       pt.y += dy + 1;
 
       // Scale back down to the original size
-      pt.x /= 2;
-      pt.y /= 2;
+      //pt.x /= 2;
+      //pt.y /= 2;
 
       // Check everything is still with the bounds of the image
       if (pt.x < 0) {
@@ -1673,11 +1771,11 @@ vector<Point> expand_coordinates(vector<Point> boundary) {
       if (pt.y < 0) {
          pt.y = 0;
       }
-      if (pt.x >= size_x) {
-         pt.x = size_x - 1;
+      if (pt.x >= size_x * 2) {
+         pt.x = size_x * 2 - 1;
       }
-      if (pt.y >= size_y) {
-         pt.y = size_y - 1;
+      if (pt.y >= size_y * 2) {
+         pt.y = size_y * 2 - 1;
       }
       result.push_back(pt);
 
@@ -1689,7 +1787,8 @@ vector<Point> expand_coordinates(vector<Point> boundary) {
 
 void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int start_y, int min_x, int min_y, int max_x, int max_y) {
    int sig = sigs[start_y * size_x + start_x];
-
+   float x;
+   float y;
    printf("tracing signal %d on layer %d starting at %d, %d\n", sig, layer, start_x, start_y);
 
    bool debug = false; // sig == 3273 && layer == 1;
@@ -1712,29 +1811,37 @@ void trace_segment(FILE *segfile, int layer, uint16_t *sigs, int start_x, int st
    boundary = compress_edges(boundary, debug);
 
    // Expand everything by half a pixel, so shapes "touch"
-   boundary = expand_coordinates(boundary);
+   boundary = expand_coordinates(layer, sig, boundary);
 
    if (boundary.size() > 0) {
       ::fprintf(segfile, "[ %d,'%c',%d", sig, (signals[sig].pullup ? '+' : '-'), layer);
       for (int i = 0; i < boundary.size(); i++) {
-         ::fprintf(segfile, ",%d,%d", boundary[i].x, size_y - boundary[i].y - 1);
+         x = (float) boundary[i].x / 2.0;
+         y = size_y - 1 - (float) boundary[i].y / 2.0;
+         ::fprintf(segfile, ",%g,%g", x, y);
       }
       bool closedBoundary = false;
       for (int j = 0; j < holes.size(); j++) {
          vector<Point> hole = holes[j];
          hole = remove_staircase(hole, debug);
          hole = compress_edges(hole, debug);
-         hole = expand_coordinates(hole);
+         hole = expand_coordinates(layer, sig, hole);
          if (hole.size() > 0) {
             if (!closedBoundary) {
                // If there are holes, we need to "close" the outer boundary by re-emitting the start point
-               ::fprintf(segfile, ",%d,%d", boundary[0].x, size_y - boundary[0].y - 1);
+               x = (float) boundary[0].x / 2.0;
+               y = size_y - 1 - (float) boundary[0].y / 2.0;
+               ::fprintf(segfile, ",%g,%g", x, y);
                closedBoundary = true;
             }
             for (int k = 0; k < hole.size(); k++) {
-               ::fprintf(segfile, ",%d,%d", hole[k].x, size_y - hole[k].y - 1);
+               x = (float) hole[k].x / 2.0;
+               y = size_y - 1 - (float) hole[k].y / 2.0;
+               ::fprintf(segfile, ",%g,%g", x, y);
             }
-            ::fprintf(segfile, ",%d,%d", hole[0].x, size_y - hole[0].y - 1);
+            x = (float) hole[0].x / 2.0;
+            y = size_y - 1 - (float) hole[0].y / 2.0;
+            ::fprintf(segfile, ",%g,%g", x, y);
          } else {
             printf("Warning: Inner boundary has zero points\n");
          }
