@@ -1,4 +1,4 @@
-pragma warning(disable:4786)
+#pragma warning(disable:4786)
 
 #include <stdio.h>
 #include <iterator>
@@ -152,7 +152,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       return "Latch with push/pull output";
    }
 
-   
+
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
@@ -252,7 +252,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "Register bit";
    }
-   
+
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
@@ -284,7 +284,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "Latch";
    }
-   
+
    if (ord==idx++) {
       switch (cmd) {
       case CMD_VERILOG:
@@ -349,7 +349,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "RS Latch with complementary outputs";
    }
-   
+
 
    if (ord==idx++) {
       switch (cmd) {
@@ -403,7 +403,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "Storage node (clk)";
    }
-      
+
 #if 0
    // Not sure what kaming something a pad does
    if (ord==idx++) {
@@ -426,9 +426,9 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       }
       return "Pad input";
    }
+#endif
 
 
-   
 #if 0
    if (ord==idx++) {
       switch (cmd) {
@@ -1371,6 +1371,7 @@ const char *Module(INTERFACE *sub, int ord, int cmd, FILE *fp) {
       return "Datapath bitslice";
    }
 #endif
+
    if (ord<idx+NumGates) {
       const char *p = Gates[ord-idx];
       switch (cmd) {
