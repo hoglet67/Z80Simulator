@@ -20,7 +20,11 @@
 
 #include <png++/png.hpp>
 
+#if !defined(WINDOWS)
 #include <sys/time.h>
+#else
+#include <Windows.h>
+#endif
 
 using namespace std;
 
@@ -40,12 +44,14 @@ uint16_t stack_layer[FILL_STACK_SIZE];
 
 #define ZeroMemory(p, sz) memset((p), 0, (sz))
 
+#if !defined(WINDOWS)
 uint64_t GetTickCount()
 {
    timeval tv;
    gettimeofday(&tv, NULL);
    return  tv.tv_sec * 1000LL + tv.tv_usec / 1000;
 }
+#endif
 
 #ifdef DMB_THREAD
 unsigned int thread_count = 3;
