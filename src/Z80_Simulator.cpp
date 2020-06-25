@@ -1792,7 +1792,15 @@ int main(int argc, char *argv[])
    // ================================================================
    // ================================================================
 
-/* for (unsigned int i = 0; i < pads.size(); i++)
+   // Write out the layermap file as 3 individual layers containing a net number for each coordinate
+   int bytes = size_x * size_y * sizeof(uint16_t);
+   FILE* file = fopen("layermap.bin", "wb");
+   fwrite(signals_diff, 1, bytes, file);
+   fwrite(signals_poly, 1, bytes, file);
+   fwrite(signals_metal, 1, bytes, file);
+   fclose(file);
+
+   /* for (unsigned int i = 0; i < pads.size(); i++)
    {
       printf("*** Pad at x:%d y:%d signal:%d cons:%d type:%s\n",
          pads[i].x, pads[i].y, pads[i].origsignal, pads[i].connections.size(), (pads[i].type == PAD_INPUT ? "I" : ((pads[i].type == PAD_OUTPUT) ? "O" : "B")));
